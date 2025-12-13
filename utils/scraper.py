@@ -1,8 +1,10 @@
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Set
 from bs4 import BeautifulSoup
 import aiohttp
 import re
 import logging
+import asyncio
+from urllib.parse import urlparse, urljoin, parse_qs, urlencode, urlunparse
 
 logger = logging.getLogger(__name__)
 
@@ -305,16 +307,72 @@ class WebScraper:
         return items
     
     @staticmethod
-    async def scrape_items(session: aiohttp.ClientSession, url: str, game_name: str, 
-                          rarity_list: List[str] = None, base_url: str = None) -> List[Dict]:
+    def detect_pagination_links(html: str, current_url: str, base_url: str) -> List[str]:
+        soup = BeautifulSoup(html, 'lxml')
+        pagination_urls = set()
+        parsed_current = urlparse(current_url)
+        
+        pagination_selectors = [
+            'ul.pagination a', 'nav.pagination a', 'div.pagination a',
+            '.pager a', '.page-numbers', '.paginate a', '[class*="pagination"] a',
+            'a.page-link', 'a.page-number', '.pages a', '.page-nav a',
+            'a[href*="page="]', 'a[href*="p="]', 'a[href*="/page/"]',
+            '.next a', '.prev a', 'a.next', 'a.prev',
+            '[rel="next"]', '[rel="prev"]'
+        ]
+        
+        for selector in pagination_selectors:
+            try:
+                links = soup.select(selector)
+                for link in links:
+                    href = link.get('href', '')
+                    if not href or href == '#' or 'javascript:' in href:
+                        continue
+                    
+                    full_url = urljoin(current_url, href)
+                    parsed_link = urlparse(full_url)
+                    
+                    if parsed_link.netloc == parsed_current.netloc:
+                        pagination_urls.add(full_url)
+            except Exception:
+                continue
+        
+        page_param_patterns = [
+            (r'page[=](\d+)', 'page'),
+            (r'p[=](\d+)', 'p'),
+            (r'/page/(\d+)', None),
+        ]
+        
+        for pattern, param in page_param_patterns:
+            matches = re.findall(pattern, current_url, re.IGNORECASE)
+            if matches:
+                current_page = int(matches[0])
+                for offset in range(-2, 10):
+                    new_page = current_page + offset
+                    if new_page < 1:
+                        continue
+                    
+                    if param:
+                        parsed = urlparse(current_url)
+                        query = parse_qs(parsed.query)
+                        query[param] = [str(new_page)]
+                        new_query = urlencode(query, doseq=True)
+                        new_url = urlunparse((parsed.scheme, parsed.netloc, parsed.path, 
+                                            parsed.params, new_query, parsed.fragment))
+                    else:
+                        new_url = re.sub(r'/page/\d+', f'/page/{new_page}', current_url)
+                    
+                    pagination_urls.add(new_url)
+        
+        return list(pagination_urls)
+    
+    @staticmethod
+    async def scrape_single_page(session: aiohttp.ClientSession, url: str, 
+                                  game_name: str, base_url: str, 
+                                  rarity_list: List[str] = None) -> Tuple[List[Dict], List[str]]:
         html = await WebScraper.fetch_html(session, url)
         if not html:
-            return []
-        
-        if base_url is None:
-            from urllib.parse import urlparse
-            parsed = urlparse(url)
-            base_url = f"{parsed.scheme}://{parsed.netloc}"
+            return [], []
         
         items = WebScraper.extract_items_generic(html, base_url, game_name, rarity_list)
         
@@ -324,5 +382,61 @@ class WebScraper:
         if not items:
             items = WebScraper.extract_items_list(html, base_url, game_name, rarity_list)
         
-        logger.info(f"{game_name}: Scraped {len(items)} items from {url}")
-        return items
+        pagination_links = WebScraper.detect_pagination_links(html, url, base_url)
+        
+        return items, pagination_links
+    
+    @staticmethod
+    async def scrape_items(session: aiohttp.ClientSession, url: str, game_name: str, 
+                          rarity_list: List[str] = None, base_url: str = None,
+                          max_pages: int = 10) -> List[Dict]:
+        if base_url is None:
+            parsed = urlparse(url)
+            base_url = f"{parsed.scheme}://{parsed.netloc}"
+        
+        all_items = []
+        visited_urls: Set[str] = set()
+        urls_to_visit = [url]
+        pages_scraped = 0
+        failed_pages = 0
+        
+        logger.info(f"{game_name}: Starting scrape from {url}")
+        
+        while urls_to_visit and pages_scraped < max_pages:
+            current_url = urls_to_visit.pop(0)
+            
+            normalized_url = current_url.rstrip('/').lower()
+            if normalized_url in visited_urls:
+                continue
+            
+            visited_urls.add(normalized_url)
+            
+            items, pagination_links = await WebScraper.scrape_single_page(
+                session, current_url, game_name, base_url, rarity_list
+            )
+            
+            if items:
+                pages_scraped += 1
+                items_added = 0
+                for item in items:
+                    if not any(existing['id'] == item['id'] for existing in all_items):
+                        all_items.append(item)
+                        items_added += 1
+                logger.debug(f"{game_name}: Page {pages_scraped} - {items_added} new items from {current_url}")
+            else:
+                failed_pages += 1
+                logger.debug(f"{game_name}: No items found on {current_url}")
+            
+            for link in pagination_links:
+                normalized_link = link.rstrip('/').lower()
+                if normalized_link not in visited_urls and link not in urls_to_visit:
+                    urls_to_visit.append(link)
+            
+            if urls_to_visit and pages_scraped < max_pages:
+                await asyncio.sleep(0.5)
+        
+        if urls_to_visit and pages_scraped >= max_pages:
+            logger.info(f"{game_name}: Stopped at max_pages limit ({max_pages}), {len(urls_to_visit)} pages remaining")
+        
+        logger.info(f"{game_name}: Scraped {len(all_items)} items from {pages_scraped} pages ({failed_pages} failed)")
+        return all_items
