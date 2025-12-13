@@ -38,8 +38,9 @@ class InventoryCog(commands.Cog):
         items = await get_inventory(target_user.id, game_filter)
         
         if not items:
+            possessive = "Your" if target_user == interaction.user else f"{target_user.display_name}'s"
             await interaction.response.send_message(
-                f"{'Your' if target_user == interaction.user else f'{target_user.display_name}\\'s'} inventory is empty.",
+                f"{possessive} inventory is empty.",
                 ephemeral=True
             )
             return
