@@ -3,36 +3,27 @@ import json
 import os
 import re
 from .base import GameAPIAdapter, APIRegistry
+from utils.scraper import WebScraper
 
 class PS99Adapter(GameAPIAdapter):
     def __init__(self):
         super().__init__('ps99')
         self.base_url = 'https://biggamesapi.io/api'
-        self.values_url = 'https://petsimulatorvalues.com/values.php?category=all'
+        self.default_values_url = 'https://petsimulatorvalues.com/values.php?category=all'
+        self.values_url = self.default_values_url
         self.fallback_path = 'data/fallback_ps99.json'
         self._items_data: List[Dict] = []
+        self.rarity_list = ['Titanic', 'Huge', 'Legendary', 'Epic', 'Rare', 'Uncommon', 'Common']
         
-    def _parse_value_string(self, value_str: str) -> float:
-        if not value_str:
-            return 0.0
-        value_str = str(value_str).strip().upper().replace(',', '').replace(' ', '')
-        multiplier = 1.0
-        if 'T' in value_str:
-            multiplier = 1_000_000_000_000
-            value_str = value_str.replace('T', '')
-        elif 'B' in value_str:
-            multiplier = 1_000_000_000
-            value_str = value_str.replace('B', '')
-        elif 'M' in value_str:
-            multiplier = 1_000_000
-            value_str = value_str.replace('M', '')
-        elif 'K' in value_str:
-            multiplier = 1_000
-            value_str = value_str.replace('K', '')
+    async def _get_current_url(self) -> str:
         try:
-            return float(value_str) * multiplier
+            from utils.database import get_game_source
+            custom_url = await get_game_source(self.game_name)
+            if custom_url:
+                return custom_url
         except:
-            return 0.0
+            pass
+        return self.values_url or self.default_values_url
     
     async def _fetch_from_values_site(self) -> List[Dict]:
         cached = self._get_cached('items_from_site')
@@ -42,95 +33,27 @@ class PS99Adapter(GameAPIAdapter):
         items = []
         try:
             session = await self.get_session()
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            }
-            async with session.get(self.values_url, headers=headers) as response:
-                if response.status != 200:
-                    print(f"PS99 values site returned status {response.status}")
-                    return []
-                html = await response.text()
-            
-            pet_pattern = re.compile(
-                r'<div[^>]*class="[^"]*pet-card[^"]*"[^>]*>.*?'
-                r'<img[^>]*src="([^"]*)"[^>]*>.*?'
-                r'<[^>]*>([^<]+)</[^>]*>.*?'
-                r'(?:Value|RAP)[:\s]*([0-9.,]+[KMBT]?).*?'
-                r'(?:Demand[:\s]*(\d+))?',
-                re.DOTALL | re.IGNORECASE
+            url = await self._get_current_url()
+            items = await WebScraper.scrape_items(
+                session, url, self.game_name,
+                rarity_list=self.rarity_list
             )
             
-            img_pattern = re.compile(r'<img[^>]*src="([^"]+)"[^>]*>', re.IGNORECASE)
-            name_pattern = re.compile(r'<(?:h[1-6]|span|div|p)[^>]*class="[^"]*(?:pet-name|name|title)[^"]*"[^>]*>([^<]+)<', re.IGNORECASE)
-            value_pattern = re.compile(r'(?:Value|RAP)[:\s]*([0-9.,]+\s*[KMBT]?)', re.IGNORECASE)
-            
-            blocks = re.split(r'<div[^>]*class="[^"]*(?:pet-card|item-card|pet-box|card)[^"]*"', html)
-            
-            for block in blocks[1:]:
-                try:
-                    img_match = img_pattern.search(block)
-                    icon_url = ''
-                    if img_match:
-                        icon_url = img_match.group(1)
-                        if icon_url and not icon_url.startswith('http'):
-                            icon_url = f'https://petsimulatorvalues.com{icon_url}'
-                    
-                    name = ''
-                    name_match = name_pattern.search(block)
-                    if name_match:
-                        name = name_match.group(1).strip()
-                    else:
-                        alt_match = re.search(r'alt="([^"]+)"', block)
-                        if alt_match:
-                            name = alt_match.group(1).strip()
-                    
-                    if not name:
-                        continue
-                    
-                    value = 0.0
-                    value_match = value_pattern.search(block)
-                    if value_match:
-                        value = self._parse_value_string(value_match.group(1))
-                    
-                    demand = 5
-                    demand_match = re.search(r'Demand[:\s]*(\d+)', block, re.IGNORECASE)
-                    if demand_match:
-                        demand = int(demand_match.group(1))
-                    
-                    rarity = 'Common'
-                    if 'titanic' in name.lower() or 'titanic' in block.lower():
-                        rarity = 'Titanic'
-                    elif 'huge' in name.lower() or 'huge' in block.lower():
-                        rarity = 'Huge'
-                    elif 'legendary' in block.lower():
-                        rarity = 'Legendary'
-                    elif 'epic' in block.lower():
-                        rarity = 'Epic'
-                    elif 'rare' in block.lower():
-                        rarity = 'Rare'
-                    
-                    items.append({
-                        'id': self._normalize_name(name),
-                        'name': name,
-                        'normalized_name': self._normalize_name(name),
-                        'rarity': rarity,
-                        'icon_url': icon_url,
-                        'value': value,
-                        'demand': demand,
-                        'tradeable': True,
-                        'game': self.game_name,
-                        'metadata': {
-                            'huge': 'huge' in name.lower(),
-                            'titanic': 'titanic' in name.lower()
-                        }
-                    })
-                except Exception as e:
-                    continue
+            for item in items:
+                name_lower = item['name'].lower()
+                if 'titanic' in name_lower:
+                    item['rarity'] = 'Titanic'
+                    item['metadata'] = {'titanic': True, 'huge': False}
+                elif 'huge' in name_lower:
+                    item['rarity'] = 'Huge'
+                    item['metadata'] = {'titanic': False, 'huge': True}
+                else:
+                    item['metadata'] = {'titanic': False, 'huge': False}
             
             if items:
                 self._set_cached('items_from_site', items)
                 self._items_data = items
-                print(f"PS99: Fetched {len(items)} items from values site")
+                print(f"PS99: Fetched {len(items)} items from {url}")
             
             return items
         except Exception as e:

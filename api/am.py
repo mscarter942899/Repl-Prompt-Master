@@ -3,21 +3,25 @@ import json
 import os
 import re
 from .base import GameAPIAdapter, APIRegistry
+from utils.scraper import WebScraper
 
 class AdoptMeAdapter(GameAPIAdapter):
     def __init__(self):
         super().__init__('am')
-        self.values_url = 'https://adoptmetradingvalues.com/pet-value-list.php'
+        self.default_values_url = 'https://adoptmetradingvalues.com/pet-value-list.php'
+        self.values_url = self.default_values_url
         self.fallback_path = 'data/fallback_am.json'
+        self.rarity_list = ['Legendary', 'Ultra Rare', 'Rare', 'Uncommon', 'Common']
         
-    def _parse_value_string(self, value_str: str) -> float:
-        if not value_str:
-            return 0.0
-        value_str = str(value_str).strip().replace(',', '').replace(' ', '')
+    async def _get_current_url(self) -> str:
         try:
-            return float(value_str) * 1_000_000
+            from utils.database import get_game_source
+            custom_url = await get_game_source(self.game_name)
+            if custom_url:
+                return custom_url
         except:
-            return 0.0
+            pass
+        return self.values_url or self.default_values_url
         
     async def fetch_items(self) -> List[Dict]:
         cached = self._get_cached('items')
@@ -27,56 +31,21 @@ class AdoptMeAdapter(GameAPIAdapter):
         items = []
         try:
             session = await self.get_session()
-            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-            async with session.get(self.values_url, headers=headers) as response:
-                if response.status == 200:
-                    html = await response.text()
-                    
-                    blocks = re.split(r'<div[^>]*class="[^"]*(?:pet-card|item-card|pet-box)[^"]*"', html)
-                    
-                    for block in blocks[1:]:
-                        try:
-                            img_match = re.search(r'<img[^>]*src="([^"]+)"', block)
-                            icon_url = img_match.group(1) if img_match else ''
-                            if icon_url and not icon_url.startswith('http'):
-                                icon_url = f'https://adoptmetradingvalues.com{icon_url}'
-                            
-                            name_match = re.search(r'(?:alt="([^"]+)"|<[^>]*class="[^"]*pet-name[^"]*"[^>]*>([^<]+)<)', block)
-                            name = ''
-                            if name_match:
-                                name = (name_match.group(1) or name_match.group(2) or '').strip()
-                            
-                            if not name:
-                                continue
-                            
-                            value_match = re.search(r'(?:Value|Score)[:\s]*([0-9.,]+)', block, re.IGNORECASE)
-                            value = self._parse_value_string(value_match.group(1)) if value_match else 0
-                            
-                            rarity = 'Common'
-                            for r in ['Legendary', 'Ultra Rare', 'Rare', 'Uncommon']:
-                                if r.lower() in block.lower():
-                                    rarity = r
-                                    break
-                            
-                            items.append({
-                                'id': self._normalize_name(name),
-                                'name': name,
-                                'normalized_name': self._normalize_name(name),
-                                'rarity': rarity,
-                                'icon_url': icon_url,
-                                'value': value,
-                                'tradeable': True,
-                                'game': self.game_name,
-                                'metadata': {
-                                    'neon': 'neon' in name.lower(),
-                                    'mega_neon': 'mega' in name.lower()
-                                }
-                            })
-                        except:
-                            continue
-                    
-                    if items:
-                        print(f"AM: Fetched {len(items)} items from values site")
+            url = await self._get_current_url()
+            items = await WebScraper.scrape_items(
+                session, url, self.game_name,
+                rarity_list=self.rarity_list
+            )
+            
+            for item in items:
+                name_lower = item['name'].lower()
+                item['metadata'] = {
+                    'neon': 'neon' in name_lower,
+                    'mega_neon': 'mega' in name_lower
+                }
+            
+            if items:
+                print(f"AM: Fetched {len(items)} items from {url}")
         except Exception as e:
             print(f"Error fetching AM values: {e}")
         

@@ -177,6 +177,15 @@ async def init_database():
             )
         ''')
         
+        await db.execute('''
+            CREATE TABLE IF NOT EXISTS game_sources (
+                game TEXT PRIMARY KEY,
+                values_url TEXT NOT NULL,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                updated_by INTEGER
+            )
+        ''')
+        
         await db.execute('CREATE INDEX IF NOT EXISTS idx_items_game ON items(game)')
         await db.execute('CREATE INDEX IF NOT EXISTS idx_items_normalized ON items(normalized_name)')
         await db.execute('CREATE INDEX IF NOT EXISTS idx_trades_status ON trades(status)')
@@ -376,3 +385,28 @@ async def upsert_item(game: str, item_id: str, name: str, **kwargs) -> None:
             values = [game, item_id, name, normalized] + list(kwargs.values())
             await db.execute(f'INSERT INTO items ({", ".join(columns)}) VALUES ({placeholders})', values)
         await db.commit()
+
+async def get_game_source(game: str) -> Optional[str]:
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        async with db.execute('SELECT values_url FROM game_sources WHERE game = ?', (game,)) as cursor:
+            row = await cursor.fetchone()
+            return row[0] if row else None
+
+async def set_game_source(game: str, values_url: str, updated_by: Optional[int] = None) -> None:
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        await db.execute('''
+            INSERT INTO game_sources (game, values_url, updated_by, updated_at)
+            VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(game) DO UPDATE SET 
+                values_url = excluded.values_url,
+                updated_by = excluded.updated_by,
+                updated_at = CURRENT_TIMESTAMP
+        ''', (game, values_url, updated_by))
+        await db.commit()
+
+async def get_all_game_sources() -> Dict[str, str]:
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute('SELECT game, values_url FROM game_sources') as cursor:
+            rows = await cursor.fetchall()
+            return {row['game']: row['values_url'] for row in rows}

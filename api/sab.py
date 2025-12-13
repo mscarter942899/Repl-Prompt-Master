@@ -3,34 +3,25 @@ import json
 import os
 import re
 from .base import GameAPIAdapter, APIRegistry
+from utils.scraper import WebScraper
 
 class SABAdapter(GameAPIAdapter):
     def __init__(self):
         super().__init__('sab')
-        self.values_url = 'https://valuesrbx.com/steal-a-brainrot-value/'
+        self.default_values_url = 'https://valuesrbx.com/steal-a-brainrot-value/'
+        self.values_url = self.default_values_url
         self.fallback_path = 'data/fallback_sab.json'
+        self.rarity_list = ['Secret', 'Mythic', 'Legendary', 'Epic', 'Rare', 'Uncommon', 'Common']
         
-    def _parse_value_string(self, value_str: str) -> float:
-        if not value_str:
-            return 0.0
-        value_str = str(value_str).strip().upper().replace(',', '').replace(' ', '').replace('$', '')
-        multiplier = 1.0
-        if 'T' in value_str:
-            multiplier = 1_000_000_000_000
-            value_str = value_str.replace('T', '')
-        elif 'B' in value_str:
-            multiplier = 1_000_000_000
-            value_str = value_str.replace('B', '')
-        elif 'M' in value_str:
-            multiplier = 1_000_000
-            value_str = value_str.replace('M', '')
-        elif 'K' in value_str:
-            multiplier = 1_000
-            value_str = value_str.replace('K', '')
+    async def _get_current_url(self) -> str:
         try:
-            return float(value_str) * multiplier
+            from utils.database import get_game_source
+            custom_url = await get_game_source(self.game_name)
+            if custom_url:
+                return custom_url
         except:
-            return 0.0
+            pass
+        return self.values_url or self.default_values_url
         
     async def fetch_items(self) -> List[Dict]:
         cached = self._get_cached('items')
@@ -40,53 +31,17 @@ class SABAdapter(GameAPIAdapter):
         items = []
         try:
             session = await self.get_session()
-            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-            async with session.get(self.values_url, headers=headers) as response:
-                if response.status == 200:
-                    html = await response.text()
-                    
-                    blocks = re.split(r'<div[^>]*class="[^"]*(?:item-card|value-card|brainrot-card)[^"]*"', html)
-                    
-                    for block in blocks[1:]:
-                        try:
-                            img_match = re.search(r'<img[^>]*src="([^"]+)"', block)
-                            icon_url = img_match.group(1) if img_match else ''
-                            if icon_url and not icon_url.startswith('http'):
-                                icon_url = f'https://valuesrbx.com{icon_url}'
-                            
-                            name_match = re.search(r'(?:alt="([^"]+)"|<[^>]*class="[^"]*name[^"]*"[^>]*>([^<]+)<)', block)
-                            name = ''
-                            if name_match:
-                                name = (name_match.group(1) or name_match.group(2) or '').strip()
-                            
-                            if not name:
-                                continue
-                            
-                            value_match = re.search(r'(?:Value|Price)[:\s]*\$?([0-9.,]+\s*[KMBT]?)', block, re.IGNORECASE)
-                            value = self._parse_value_string(value_match.group(1)) if value_match else 0
-                            
-                            rarity = 'Common'
-                            for r in ['Secret', 'Mythic', 'Legendary', 'Epic', 'Rare', 'Uncommon']:
-                                if r.lower() in block.lower():
-                                    rarity = r
-                                    break
-                            
-                            items.append({
-                                'id': self._normalize_name(name),
-                                'name': name,
-                                'normalized_name': self._normalize_name(name),
-                                'rarity': rarity,
-                                'icon_url': icon_url,
-                                'value': value,
-                                'tradeable': True,
-                                'game': self.game_name,
-                                'metadata': {'category': 'character'}
-                            })
-                        except:
-                            continue
-                    
-                    if items:
-                        print(f"SAB: Fetched {len(items)} items from values site")
+            url = await self._get_current_url()
+            items = await WebScraper.scrape_items(
+                session, url, self.game_name,
+                rarity_list=self.rarity_list
+            )
+            
+            for item in items:
+                item['metadata'] = {'category': 'character'}
+            
+            if items:
+                print(f"SAB: Fetched {len(items)} items from {url}")
         except Exception as e:
             print(f"Error fetching SAB values: {e}")
         

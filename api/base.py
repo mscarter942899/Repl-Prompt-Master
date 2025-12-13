@@ -16,6 +16,8 @@ class GameAPIAdapter(ABC):
         self._cache_ttl = timedelta(minutes=30)
         self._rate_limit_remaining = 100
         self._rate_limit_reset = datetime.now()
+        self.default_values_url: str = ''
+        self.values_url: str = ''
         
     async def get_session(self) -> aiohttp.ClientSession:
         if self.session is None or self.session.closed:

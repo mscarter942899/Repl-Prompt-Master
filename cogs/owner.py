@@ -93,6 +93,132 @@ class OwnerCog(commands.Cog):
         
         await interaction.followup.send("\n".join(refreshed))
     
+    @owner_group.command(name="set_source", description="Set custom scraping URL for a game")
+    @is_owner()
+    @app_commands.describe(
+        game="The game to change the source for",
+        url="The new URL to scrape values from"
+    )
+    @app_commands.choices(game=[
+        app_commands.Choice(name="Pet Simulator 99", value="ps99"),
+        app_commands.Choice(name="Grow a Garden", value="gag"),
+        app_commands.Choice(name="Adopt Me", value="am"),
+        app_commands.Choice(name="Blox Fruits", value="bf"),
+        app_commands.Choice(name="Steal a Brainrot", value="sab")
+    ])
+    async def set_source(self, interaction: discord.Interaction, game: str, url: str):
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            from utils.database import set_game_source, init_database
+            
+            await init_database()
+            
+            await set_game_source(game, url, interaction.user.id)
+            
+            adapter = APIRegistry.get(game)
+            if adapter:
+                adapter._cache.clear()
+                adapter._cache_expiry.clear()
+                adapter.values_url = url
+                
+                items = await adapter.fetch_items()
+                item_count = len(items) if items else 0
+                
+                await interaction.followup.send(
+                    f"✅ Updated source URL for **{game.upper()}**\n"
+                    f"New URL: {url}\n"
+                    f"Fetched: {item_count} items"
+                )
+            else:
+                await interaction.followup.send(f"❌ Game '{game}' not found")
+        except Exception as e:
+            await interaction.followup.send(f"❌ Error: {str(e)}")
+    
+    @owner_group.command(name="view_sources", description="View current scraping URLs for all games")
+    @is_owner()
+    async def view_sources(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            from utils.database import get_all_game_sources, init_database
+            
+            await init_database()
+            
+            custom_sources = await get_all_game_sources()
+            
+            embed = discord.Embed(
+                title="Game Source URLs",
+                color=0x3498DB
+            )
+            
+            game_names = {
+                'ps99': 'Pet Simulator 99',
+                'gag': 'Grow a Garden',
+                'am': 'Adopt Me',
+                'bf': 'Blox Fruits',
+                'sab': 'Steal a Brainrot'
+            }
+            
+            for game_code, adapter in APIRegistry.all().items():
+                game_name = game_names.get(game_code, game_code.upper())
+                default_url = getattr(adapter, 'default_values_url', adapter.values_url)
+                custom_url = custom_sources.get(game_code)
+                
+                if custom_url:
+                    value = f"**Custom:** {custom_url}\nDefault: {default_url}"
+                else:
+                    value = f"**Default:** {default_url}"
+                
+                embed.add_field(name=game_name, value=value, inline=False)
+            
+            await interaction.followup.send(embed=embed)
+        except Exception as e:
+            await interaction.followup.send(f"❌ Error: {str(e)}")
+    
+    @owner_group.command(name="reset_source", description="Reset a game to its default scraping URL")
+    @is_owner()
+    @app_commands.describe(game="The game to reset to default URL")
+    @app_commands.choices(game=[
+        app_commands.Choice(name="Pet Simulator 99", value="ps99"),
+        app_commands.Choice(name="Grow a Garden", value="gag"),
+        app_commands.Choice(name="Adopt Me", value="am"),
+        app_commands.Choice(name="Blox Fruits", value="bf"),
+        app_commands.Choice(name="Steal a Brainrot", value="sab")
+    ])
+    async def reset_source(self, interaction: discord.Interaction, game: str):
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            from utils.database import get_db, init_database
+            
+            await init_database()
+            
+            db = await get_db()
+            await db.execute('DELETE FROM game_sources WHERE game = ?', (game,))
+            await db.commit()
+            await db.close()
+            
+            adapter = APIRegistry.get(game)
+            if adapter:
+                adapter._cache.clear()
+                adapter._cache_expiry.clear()
+                default_url = getattr(adapter, 'default_values_url', adapter.values_url)
+                adapter.values_url = default_url
+                
+                items = await adapter.fetch_items()
+                item_count = len(items) if items else 0
+                
+                await interaction.followup.send(
+                    f"✅ Reset **{game.upper()}** to default URL\n"
+                    f"URL: {default_url}\n"
+                    f"Fetched: {item_count} items"
+                )
+            else:
+                await interaction.followup.send(f"❌ Game '{game}' not found")
+        except Exception as e:
+            await interaction.followup.send(f"❌ Error: {str(e)}")
+    
     @owner_group.command(name="init_db", description="Initialize/reset database")
     @is_owner()
     async def initialize_db(self, interaction: discord.Interaction):
