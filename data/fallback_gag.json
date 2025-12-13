@@ -1,16 +1,16 @@
 {
   "items": [
-    {"id": "golden_watering_can", "name": "Golden Watering Can", "rarity": "Legendary", "value": 10000000, "tradeable": true, "category": "tool"},
-    {"id": "rainbow_seed", "name": "Rainbow Seed", "rarity": "Mythic", "value": 50000000, "tradeable": true, "category": "seed"},
-    {"id": "cosmic_flower", "name": "Cosmic Flower", "rarity": "Divine", "value": 100000000, "tradeable": true, "category": "flower"},
-    {"id": "rare_tulip", "name": "Rare Tulip", "rarity": "Rare", "value": 500000, "tradeable": true, "category": "flower"},
-    {"id": "magic_fertilizer", "name": "Magic Fertilizer", "rarity": "Epic", "value": 2000000, "tradeable": true, "category": "consumable"},
-    {"id": "diamond_pot", "name": "Diamond Pot", "rarity": "Legendary", "value": 15000000, "tradeable": true, "category": "pot"},
-    {"id": "sunflower_pet", "name": "Sunflower Pet", "rarity": "Epic", "value": 3000000, "tradeable": true, "category": "pet"},
-    {"id": "garden_gnome", "name": "Garden Gnome", "rarity": "Uncommon", "value": 100000, "tradeable": true, "category": "decoration"},
-    {"id": "crystal_seed", "name": "Crystal Seed", "rarity": "Legendary", "value": 8000000, "tradeable": true, "category": "seed"},
-    {"id": "enchanted_soil", "name": "Enchanted Soil", "rarity": "Rare", "value": 750000, "tradeable": true, "category": "consumable"}
+    {"id": "golden_watering_can", "name": "Golden Watering Can", "rarity": "Legendary", "value": 10000000, "tradeable": true, "category": "tool", "icon": "https://cdn.discordapp.com/emojis/1234567890.png"},
+    {"id": "rainbow_seed", "name": "Rainbow Seed", "rarity": "Mythic", "value": 50000000, "tradeable": true, "category": "seed", "icon": "https://cdn.discordapp.com/emojis/1234567891.png"},
+    {"id": "cosmic_flower", "name": "Cosmic Flower", "rarity": "Divine", "value": 100000000, "tradeable": true, "category": "flower", "icon": "https://cdn.discordapp.com/emojis/1234567892.png"},
+    {"id": "rare_tulip", "name": "Rare Tulip", "rarity": "Rare", "value": 500000, "tradeable": true, "category": "flower", "icon": "https://cdn.discordapp.com/emojis/1234567893.png"},
+    {"id": "magic_fertilizer", "name": "Magic Fertilizer", "rarity": "Epic", "value": 2000000, "tradeable": true, "category": "consumable", "icon": "https://cdn.discordapp.com/emojis/1234567894.png"},
+    {"id": "diamond_pot", "name": "Diamond Pot", "rarity": "Legendary", "value": 15000000, "tradeable": true, "category": "pot", "icon": "https://cdn.discordapp.com/emojis/1234567895.png"},
+    {"id": "sunflower_pet", "name": "Sunflower Pet", "rarity": "Epic", "value": 3000000, "tradeable": true, "category": "pet", "icon": "https://cdn.discordapp.com/emojis/1234567896.png"},
+    {"id": "garden_gnome", "name": "Garden Gnome", "rarity": "Uncommon", "value": 100000, "tradeable": true, "category": "decoration", "icon": "https://cdn.discordapp.com/emojis/1234567897.png"},
+    {"id": "crystal_seed", "name": "Crystal Seed", "rarity": "Legendary", "value": 8000000, "tradeable": true, "category": "seed", "icon": "https://cdn.discordapp.com/emojis/1234567898.png"},
+    {"id": "enchanted_soil", "name": "Enchanted Soil", "rarity": "Rare", "value": 750000, "tradeable": true, "category": "consumable", "icon": "https://cdn.discordapp.com/emojis/1234567899.png"}
   ],
-  "last_updated": "2024-01-01T00:00:00Z",
+  "last_updated": "2024-12-13T00:00:00Z",
   "source": "fallback"
 }
