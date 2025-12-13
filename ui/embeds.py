@@ -318,16 +318,48 @@ class SearchEmbed:
             embed.add_field(name="No Results", value="No items found matching your query.", inline=False)
             return embed
         
+        if items[0].get('icon_url'):
+            embed.set_thumbnail(url=items[0]['icon_url'])
+        
+        rarity_emoji = {
+            'Common': '⚪',
+            'Uncommon': '🟢',
+            'Rare': '🔵',
+            'Epic': '🟣',
+            'Legendary': '🟡',
+            'Mythic': '🔴',
+            'Titanic': '⭐',
+            'Huge': '💫',
+            'Ultra Rare': '💎',
+            'Divine': '✨',
+            'Secret': '🔮',
+            'Mythical': '🌟'
+        }
+        
         for i, item in enumerate(items[:5], 1):
             name = item.get('name', 'Unknown')
             rarity = item.get('rarity', 'Unknown')
             value = item.get('value', 0)
-            icon = item.get('icon_url', '')
             
-            field_value = f"Rarity: {rarity}\nValue: {value:,.0f}"
+            emoji = rarity_emoji.get(rarity, '⚪')
+            
+            if value >= 1_000_000_000_000:
+                value_str = f"{value / 1_000_000_000_000:.1f}T"
+            elif value >= 1_000_000_000:
+                value_str = f"{value / 1_000_000_000:.1f}B"
+            elif value >= 1_000_000:
+                value_str = f"{value / 1_000_000:.1f}M"
+            elif value >= 1_000:
+                value_str = f"{value / 1_000:.1f}K"
+            else:
+                value_str = f"{value:,.0f}"
+            
+            field_value = f"{emoji} {rarity}\n💰 {value_str}"
             embed.add_field(name=f"{i}. {name}", value=field_value, inline=True)
         
         if len(items) > 5:
-            embed.set_footer(text=f"Showing 5 of {len(items)} results")
+            embed.set_footer(text=f"Showing 5 of {len(items)} results | Use /item for more details")
+        else:
+            embed.set_footer(text="Use /item for more details on a specific item")
         
         return embed

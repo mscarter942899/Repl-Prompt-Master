@@ -1,7 +1,7 @@
 import discord
 from discord import app_commands
 from discord.ext import commands
-from typing import Optional
+from typing import Optional, List
 
 from utils.resolver import item_resolver
 from api.base import APIRegistry
@@ -10,6 +10,40 @@ from ui.embeds import SearchEmbed, GAME_NAMES, GAME_COLORS
 class SearchCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        self._item_cache: dict = {}
+    
+    async def item_autocomplete(self, interaction: discord.Interaction, current: str) -> List[app_commands.Choice[str]]:
+        game = None
+        if interaction.data:
+            options = interaction.data.get('options', [])
+            if options:
+                for opt in options:
+                    if isinstance(opt, dict) and opt.get('name') == 'game':
+                        game = str(opt.get('value', ''))
+                        break
+        
+        if not game:
+            return []
+        
+        try:
+            if not current or len(current) < 1:
+                adapter = APIRegistry.get(game)
+                if adapter:
+                    items = await adapter.fetch_items()
+                    sorted_items = sorted(items, key=lambda x: x.get('value', 0), reverse=True)[:25]
+                    return [
+                        app_commands.Choice(name=f"{item['name'][:50]} ({item.get('value', 0):,.0f})"[:100], value=item['name'][:100])
+                        for item in sorted_items
+                    ]
+                return []
+            
+            items = await item_resolver.search_items(game, current, limit=25)
+            return [
+                app_commands.Choice(name=f"{item['name'][:50]} ({item.get('value', 0):,.0f})"[:100], value=item['name'][:100])
+                for item in items
+            ]
+        except Exception:
+            return []
     
     @app_commands.command(name="search", description="Search for items in a game")
     @app_commands.describe(
@@ -23,6 +57,7 @@ class SearchCog(commands.Cog):
         app_commands.Choice(name="Blox Fruits", value="bf"),
         app_commands.Choice(name="Steal a Brainrot", value="sab")
     ])
+    @app_commands.autocomplete(query=item_autocomplete)
     async def search(self, interaction: discord.Interaction, game: str, query: str):
         await interaction.response.defer()
         
@@ -43,6 +78,7 @@ class SearchCog(commands.Cog):
         app_commands.Choice(name="Blox Fruits", value="bf"),
         app_commands.Choice(name="Steal a Brainrot", value="sab")
     ])
+    @app_commands.autocomplete(name=item_autocomplete)
     async def item_info(self, interaction: discord.Interaction, game: str, name: str):
         await interaction.response.defer()
         
