@@ -149,6 +149,34 @@ async def init_database():
             )
         ''')
         
+        await db.execute('''
+            CREATE TABLE IF NOT EXISTS auctions (
+                id TEXT PRIMARY KEY,
+                seller_id INTEGER NOT NULL,
+                game TEXT NOT NULL,
+                item_data TEXT NOT NULL,
+                starting_bid INTEGER NOT NULL,
+                current_bid INTEGER DEFAULT 0,
+                current_bidder INTEGER,
+                status TEXT DEFAULT 'active',
+                channel_id INTEGER,
+                message_id INTEGER,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                ends_at TEXT NOT NULL
+            )
+        ''')
+        
+        await db.execute('''
+            CREATE TABLE IF NOT EXISTS auction_bids (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                auction_id TEXT NOT NULL,
+                user_id INTEGER NOT NULL,
+                amount INTEGER NOT NULL,
+                timestamp TEXT DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (auction_id) REFERENCES auctions(id)
+            )
+        ''')
+        
         await db.execute('CREATE INDEX IF NOT EXISTS idx_items_game ON items(game)')
         await db.execute('CREATE INDEX IF NOT EXISTS idx_items_normalized ON items(normalized_name)')
         await db.execute('CREATE INDEX IF NOT EXISTS idx_trades_status ON trades(status)')
@@ -167,7 +195,7 @@ async def get_user(discord_id: int) -> Optional[Dict]:
             row = await cursor.fetchone()
             return dict(row) if row else None
 
-async def create_user(discord_id: int, discord_created: str) -> Dict:
+async def create_user(discord_id: int, discord_created: str) -> Optional[Dict]:
     async with aiosqlite.connect(DATABASE_PATH) as db:
         await db.execute('''
             INSERT OR IGNORE INTO users (discord_id, discord_account_created)
@@ -192,7 +220,7 @@ async def get_trade(trade_id: int) -> Optional[Dict]:
             row = await cursor.fetchone()
             return dict(row) if row else None
 
-async def create_trade(requester_id: int, game: str, requester_items: str) -> int:
+async def create_trade(requester_id: int, game: str, requester_items: str) -> Optional[int]:
     async with aiosqlite.connect(DATABASE_PATH) as db:
         cursor = await db.execute('''
             INSERT INTO trades (requester_id, game, requester_items, status)
@@ -210,7 +238,7 @@ async def update_trade(trade_id: int, **kwargs) -> None:
         await db.execute(f'UPDATE trades SET {fields}, updated_at = CURRENT_TIMESTAMP WHERE id = ?', values)
         await db.commit()
 
-async def add_trade_history(trade_id: int, action: str, actor_id: int, details: str = None) -> None:
+async def add_trade_history(trade_id: int, action: str, actor_id: int, details: Optional[str] = None) -> None:
     async with aiosqlite.connect(DATABASE_PATH) as db:
         await db.execute('''
             INSERT INTO trade_history (trade_id, action, actor_id, details)
@@ -218,7 +246,7 @@ async def add_trade_history(trade_id: int, action: str, actor_id: int, details: 
         ''', (trade_id, action, actor_id, details))
         await db.commit()
 
-async def get_user_trades(user_id: int, status: str = None, limit: int = 50) -> List[Dict]:
+async def get_user_trades(user_id: int, status: Optional[str] = None, limit: int = 50) -> List[Dict]:
     async with aiosqlite.connect(DATABASE_PATH) as db:
         db.row_factory = aiosqlite.Row
         if status:
@@ -231,7 +259,7 @@ async def get_user_trades(user_id: int, status: str = None, limit: int = 50) -> 
             rows = await cursor.fetchall()
             return [dict(row) for row in rows]
 
-async def get_inventory(user_id: int, game: str = None) -> List[Dict]:
+async def get_inventory(user_id: int, game: Optional[str] = None) -> List[Dict]:
     async with aiosqlite.connect(DATABASE_PATH) as db:
         db.row_factory = aiosqlite.Row
         if game:
@@ -286,7 +314,7 @@ async def remove_from_inventory(user_id: int, game: str, item_id: str, quantity:
         await db.commit()
         return True
 
-async def log_audit(action: str, actor_id: int = None, target_id: int = None, details: str = None) -> None:
+async def log_audit(action: str, actor_id: Optional[int] = None, target_id: Optional[int] = None, details: Optional[str] = None) -> None:
     async with aiosqlite.connect(DATABASE_PATH) as db:
         await db.execute('''
             INSERT INTO audit_log (action, actor_id, target_id, details)

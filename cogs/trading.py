@@ -277,6 +277,60 @@ class TradingCog(commands.Cog):
         
         await interaction.response.send_message(embed=embed)
     
+    @trade_group.command(name="verify", description="Verify a trade receipt by hash")
+    @app_commands.describe(receipt_hash="The receipt hash to verify")
+    async def trade_verify(self, interaction: discord.Interaction, receipt_hash: str):
+        from utils.database import get_db
+        import aiosqlite
+        
+        async with aiosqlite.connect("data/trading_bot.db") as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT * FROM trades WHERE receipt_hash LIKE ?",
+                (f"{receipt_hash}%",)
+            ) as cursor:
+                trade = await cursor.fetchone()
+        
+        if not trade:
+            await interaction.response.send_message(
+                "No trade found with that receipt hash.",
+                ephemeral=True
+            )
+            return
+        
+        trade = dict(trade)
+        
+        is_valid = trust_engine.verify_receipt(trade, trade.get('receipt_hash', ''))
+        
+        embed = discord.Embed(
+            title="Trade Receipt Verification",
+            color=0x2ECC71 if is_valid else 0xE74C3C,
+            timestamp=datetime.utcnow()
+        )
+        
+        embed.add_field(name="Trade ID", value=str(trade['id']), inline=True)
+        embed.add_field(name="Status", value=trade['status'].replace('_', ' ').title(), inline=True)
+        embed.add_field(name="Game", value=GAME_NAMES.get(trade['game'], trade['game'].upper()), inline=True)
+        
+        embed.add_field(
+            name="Verification",
+            value="✅ Valid - Receipt hash matches" if is_valid else "❌ Invalid - Receipt may have been tampered",
+            inline=False
+        )
+        
+        if trade.get('completed_at'):
+            embed.add_field(name="Completed", value=trade['completed_at'][:19], inline=True)
+        
+        embed.add_field(
+            name="Receipt Hash",
+            value=f"`{trade.get('receipt_hash', 'N/A')[:32]}...`",
+            inline=False
+        )
+        
+        embed.set_footer(text="This receipt is immutable and cryptographically verified")
+        
+        await interaction.response.send_message(embed=embed)
+    
     @trade_group.command(name="cancel", description="Cancel a pending trade")
     @app_commands.describe(trade_id="The trade ID to cancel")
     async def trade_cancel(self, interaction: discord.Interaction, trade_id: int):

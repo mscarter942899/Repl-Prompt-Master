@@ -37,7 +37,7 @@ class GameAPIAdapter(ABC):
                     del self._cache_expiry[key]
         return None
     
-    def _set_cached(self, key: str, value: Any, ttl: timedelta = None):
+    def _set_cached(self, key: str, value: Any, ttl: Optional[timedelta] = None):
         self._cache[key] = value
         self._cache_expiry[key] = datetime.now() + (ttl or self._cache_ttl)
     

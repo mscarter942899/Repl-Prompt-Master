@@ -20,6 +20,7 @@ A production-grade Discord bot for secure Roblox trading coordination across mul
 │   ├── inventory.py     # User inventory management
 │   ├── profile.py       # User profiles & Roblox linking
 │   ├── search.py        # Item search & lookup
+│   ├── auctions.py      # Auction system
 │   ├── moderation.py    # Mod tools
 │   ├── analytics.py     # Statistics
 │   └── owner.py         # Bot owner commands
@@ -60,6 +61,12 @@ A production-grade Discord bot for secure Roblox trading coordination across mul
 - `/trade view` - View trade details
 - `/trade history` - View trade history
 - `/trade cancel` - Cancel a pending trade
+- `/trade verify` - Verify trade receipt by hash
+- `/auction create` - Create a new auction
+- `/auction bid` - Place a bid on an auction
+- `/auction list` - List active auctions
+- `/auction view` - View auction details
+- `/auction cancel` - Cancel your auction
 - `/inventory view` - View inventory
 - `/inventory add` - Add item to inventory
 - `/profile` - View trading profile
@@ -67,6 +74,15 @@ A production-grade Discord bot for secure Roblox trading coordination across mul
 - `/search` - Search for items
 - `/item` - Get item details
 - `/values` - View top valued items
+
+### Moderation Commands
+- `/mod audit_trade` - View detailed trade audit log
+- `/mod force_resolve` - Force resolve a disputed trade
+- `/mod ban_user` - Ban a user from trading
+- `/mod unban_user` - Unban a user
+- `/mod rollback_rep` - Reset user reputation
+- `/mod flag_user` - Flag a user for review
+- `/mod replay_trade` - View visual timeline of a trade
 
 ## Setup Required
 1. Set `DISCORD_TOKEN` in Secrets

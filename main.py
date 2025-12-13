@@ -33,6 +33,7 @@ class RobloxTradingBot(commands.Bot):
             'cogs.inventory',
             'cogs.profile',
             'cogs.search',
+            'cogs.auctions',
             'cogs.moderation',
             'cogs.analytics',
             'cogs.owner'

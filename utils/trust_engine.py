@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 from datetime import datetime, timedelta
 from enum import Enum
 import hashlib
@@ -140,7 +140,7 @@ class TrustEngine:
         else:
             return RiskLevel.SAFE, warnings
     
-    def update_reputation(self, current_data: Dict, event: str, details: Dict = None) -> Dict:
+    def update_reputation(self, current_data: Dict, event: str, details: Optional[Dict] = None) -> Dict:
         updates = {}
         
         if event == 'trade_completed':

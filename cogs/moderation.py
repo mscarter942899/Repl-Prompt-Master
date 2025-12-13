@@ -200,6 +200,99 @@ class ModerationCog(commands.Cog):
             "Report viewing functionality coming soon.",
             ephemeral=True
         )
+    
+    @mod_group.command(name="replay_trade", description="View visual timeline of a trade")
+    @is_moderator()
+    @app_commands.describe(trade_id="The trade ID to replay")
+    async def replay_trade(self, interaction: discord.Interaction, trade_id: int):
+        import aiosqlite
+        from utils.database import DATABASE_PATH
+        
+        trade = await get_trade(trade_id)
+        
+        if not trade:
+            await interaction.response.send_message("Trade not found.", ephemeral=True)
+            return
+        
+        async with aiosqlite.connect(DATABASE_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT * FROM trade_history WHERE trade_id = ? ORDER BY timestamp ASC",
+                (trade_id,)
+            ) as cursor:
+                history = await cursor.fetchall()
+        
+        embed = discord.Embed(
+            title=f"Trade Timeline - #{trade_id}",
+            color=0x9B59B6
+        )
+        
+        requester = await self.bot.fetch_user(trade['requester_id'])
+        target = None
+        if trade['target_id']:
+            try:
+                target = await self.bot.fetch_user(trade['target_id'])
+            except:
+                pass
+        
+        embed.add_field(
+            name="Participants",
+            value=f"Requester: {requester.mention}\nTarget: {target.mention if target else 'N/A'}",
+            inline=False
+        )
+        
+        embed.add_field(name="Game", value=trade['game'].upper(), inline=True)
+        embed.add_field(name="Final Status", value=trade['status'].replace('_', ' ').title(), inline=True)
+        embed.add_field(name="Risk Level", value=trade.get('risk_level', 'Unknown'), inline=True)
+        
+        if history:
+            timeline_text = []
+            action_emojis = {
+                'created': '📝',
+                'accepted': '✅',
+                'declined': '❌',
+                'cancelled': '🚫',
+                'trust_check': '🔍',
+                'handoff_started': '🎮',
+                'completed': '✨',
+                'disputed': '⚠️',
+                'expired': '⏰',
+                'force_resolved': '⚖️'
+            }
+            
+            for event in history:
+                action = event['action']
+                emoji = action_emojis.get(action.split('_')[0], '📋')
+                timestamp = event['timestamp'][:16] if event['timestamp'] else 'Unknown'
+                
+                actor_text = ""
+                if event['actor_id'] and event['actor_id'] != 0:
+                    try:
+                        actor = await self.bot.fetch_user(event['actor_id'])
+                        actor_text = f" by {actor.display_name}"
+                    except:
+                        actor_text = f" by User {event['actor_id']}"
+                
+                timeline_text.append(f"{emoji} **{action.replace('_', ' ').title()}**{actor_text}\n   `{timestamp}`")
+            
+            timeline_display = "\n".join(timeline_text[:15])
+            if len(timeline_text) > 15:
+                timeline_display += f"\n... and {len(timeline_text) - 15} more events"
+            
+            embed.add_field(name="Timeline", value=timeline_display, inline=False)
+        else:
+            embed.add_field(name="Timeline", value="No events recorded", inline=False)
+        
+        if trade.get('receipt_hash'):
+            embed.add_field(
+                name="Receipt Hash",
+                value=f"`{trade['receipt_hash'][:32]}...`",
+                inline=False
+            )
+        
+        embed.set_footer(text=f"Created: {trade['created_at'][:16]}")
+        
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 async def setup(bot: commands.Bot):
