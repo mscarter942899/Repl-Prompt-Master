@@ -21,6 +21,8 @@ class WebScraper:
         if not value_str:
             return 0.0
         value_str = str(value_str).strip().upper().replace(',', '').replace(' ', '').replace('$', '')
+        value_str = re.sub(r'[^\d.KMBT]', '', value_str)
+        
         multiplier = 1.0
         if 'T' in value_str:
             multiplier = 1_000_000_000_000
@@ -38,6 +40,71 @@ class WebScraper:
             return float(value_str) * multiplier
         except:
             return 0.0
+    
+    @staticmethod
+    def extract_value_from_element(element) -> float:
+        if element is None:
+            return 0.0
+        
+        if hasattr(element, 'get'):
+            for attr in ['data-value', 'data-price', 'data-worth', 'data-rap', 'value']:
+                val = element.get(attr)
+                if val:
+                    parsed = WebScraper.parse_value_string(val)
+                    if parsed > 0:
+                        return parsed
+        
+        if hasattr(element, 'get_text'):
+            text = element.get_text(strip=True)
+        else:
+            text = str(element)
+        
+        value_patterns = [
+            r'(?:Value|Price|RAP|Worth|Cost|Demand)[:\s]*([0-9.,]+\s*[KMBT]?)',
+            r'([0-9.,]+\s*[KMBT]?)\s*(?:Value|gems|coins|diamonds|Gems|Coins|Diamonds)',
+            r'\$\s*([0-9.,]+\s*[KMBT]?)',
+            r'^\s*([0-9.,]+\s*[KMBT]?)\s*$',
+            r'([0-9]{1,3}(?:,[0-9]{3})+)',
+            r'([0-9]+\.?[0-9]*\s*[KMBT])',
+            r'([0-9]+(?:\.[0-9]+)?)',
+        ]
+        
+        for pattern in value_patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                parsed = WebScraper.parse_value_string(match.group(1))
+                if parsed > 0:
+                    return parsed
+        
+        return 0.0
+    
+    @staticmethod
+    def find_value_in_card(card) -> float:
+        value_class_keywords = ['value', 'price', 'worth', 'rap', 'cost', 'gems', 'coins', 'diamond', 'amount', 'number']
+        for keyword in value_class_keywords:
+            value_elem = card.find(class_=lambda c: c and keyword in c.lower())
+            if value_elem:
+                val = WebScraper.extract_value_from_element(value_elem)
+                if val > 0:
+                    return val
+        
+        for attr in ['data-value', 'data-price', 'data-worth', 'data-rap']:
+            val = card.get(attr)
+            if val:
+                parsed = WebScraper.parse_value_string(val)
+                if parsed > 0:
+                    return parsed
+        
+        for tag in ['span', 'div', 'p', 'td', 'strong', 'b', 'em']:
+            for elem in card.find_all(tag):
+                text = elem.get_text(strip=True)
+                if text and re.match(r'^[0-9.,]+\s*[KMBT]?$', text, re.IGNORECASE):
+                    val = WebScraper.parse_value_string(text)
+                    if val > 0:
+                        return val
+        
+        card_text = card.get_text()
+        return WebScraper.extract_value_from_element(card_text)
     
     @staticmethod
     def normalize_name(name: str) -> str:
@@ -110,7 +177,7 @@ class WebScraper:
                 
                 icon_url = ''
                 if img:
-                    icon_url = img.get('src', '') or img.get('data-src', '')
+                    icon_url = img.get('src', '') or img.get('data-src', '') or img.get('data-lazy-src', '')
                     if icon_url and not icon_url.startswith('http'):
                         if icon_url.startswith('//'):
                             icon_url = 'https:' + icon_url
@@ -119,19 +186,7 @@ class WebScraper:
                         else:
                             icon_url = base_url.rstrip('/') + '/' + icon_url
                 
-                value = 0.0
-                card_text = card.get_text()
-                value_patterns = [
-                    r'(?:Value|Price|RAP|Worth|Cost)[:\s]*([0-9.,]+\s*[KMBT]?)',
-                    r'([0-9.,]+\s*[KMBT]?)\s*(?:Value|gems|coins|diamonds)',
-                    r'\$\s*([0-9.,]+\s*[KMBT]?)',
-                ]
-                for pattern in value_patterns:
-                    match = re.search(pattern, card_text, re.IGNORECASE)
-                    if match:
-                        value = WebScraper.parse_value_string(match.group(1))
-                        if value > 0:
-                            break
+                value = WebScraper.find_value_in_card(card)
                 
                 rarity = 'Common'
                 card_lower = str(card).lower()
@@ -185,7 +240,7 @@ class WebScraper:
                             if not name:
                                 name = img.get('alt', '').strip()
                             if not icon_url:
-                                icon_url = img.get('src', '') or img.get('data-src', '')
+                                icon_url = img.get('src', '') or img.get('data-src', '') or img.get('data-lazy-src', '')
                         
                         cell_text = cell.get_text(strip=True)
                         if not name and cell_text and len(cell_text) < 100:
@@ -193,11 +248,7 @@ class WebScraper:
                                 name = cell_text
                         
                         if value == 0:
-                            value_match = re.search(r'([0-9.,]+\s*[KMBT]?)', cell_text)
-                            if value_match:
-                                parsed = WebScraper.parse_value_string(value_match.group(1))
-                                if parsed > 0:
-                                    value = parsed
+                            value = WebScraper.extract_value_from_element(cell)
                     
                     if not name or name.lower() in seen_names:
                         continue
@@ -270,10 +321,7 @@ class WebScraper:
                 
                 seen_names.add(name.lower())
                 
-                li_text = li.get_text()
-                value_match = re.search(r'([0-9.,]+\s*[KMBT]?)', li_text)
-                if value_match:
-                    value = WebScraper.parse_value_string(value_match.group(1))
+                value = WebScraper.find_value_in_card(li)
                 
                 if icon_url and not icon_url.startswith('http'):
                     if icon_url.startswith('//'):

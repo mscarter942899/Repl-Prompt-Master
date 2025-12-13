@@ -96,3 +96,12 @@ A production-grade Discord bot for secure Roblox trading coordination across mul
 - aiosqlite for database
 - Flask for keep-alive server
 - python-Levenshtein for fuzzy matching
+- BeautifulSoup/lxml for web scraping
+
+## Web Scraper Features
+The scraper (`utils/scraper.py`) is designed to work with various website layouts:
+- **Multi-page support**: Automatically follows pagination links (up to 10 pages by default)
+- **Flexible value extraction**: Detects values from data attributes, class-based elements, and text patterns
+- **Multiple layout support**: Handles card layouts, tables, and list-based sites
+- **Value formats**: Recognizes values with K/M/B/T multipliers, commas, labels (Value:, Price:, etc.)
+- **Rate limiting**: 0.5 second delay between page requests to avoid overwhelming sites
