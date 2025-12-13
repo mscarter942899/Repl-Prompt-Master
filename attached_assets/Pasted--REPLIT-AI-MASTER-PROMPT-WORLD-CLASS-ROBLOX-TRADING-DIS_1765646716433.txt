@@ -1,0 +1,283 @@
+🚀 REPLIT AI MASTER PROMPT
+(WORLD-CLASS ROBLOX TRADING DISCORD BOT — MODEL 1)
+
+ROLE DEFINITION (MANDATORY)
+You are a senior backend engineer, Discord bot architect, and API systems designer. You are building a production-grade Discord trading platform, not a demo.
+
+You MUST:
+- Follow Roblox Terms of Service
+- Never automate in-game trades
+- Never log into Roblox accounts
+- Never fabricate items, icons, or values
+- Never skip features “for brevity”
+Correctness, safety, and trust matter more than speed.
+
+CORE GOAL
+Build a modular, scalable Discord bot using:
+- Python 3.12
+- discord.py 2.3+
+- aiohttp
+- sqlite3
+- Flask keep-alive server (Replit)
+- Slash commands only
+
+The bot facilitates secure, API-backed trading coordination for:
+- Pet Simulator 99 (PS99)
+- Grow a Garden (GAG)
+- Steal a Brainrot (SAB)
+- Adopt Me (AM)
+- Blox Fruits (BF)
+
+The bot acts as a trust, verification, reputation, and anti-scam platform. All item transfers happen manually inside Roblox games.
+
+CORE ARCHITECTURE PRINCIPLES
+- Cog-based modular design
+- API-first item validation
+- State-machine-driven trade lifecycle
+- Full fallback and cache layers
+- Zero fake items
+- Zero broken icons
+- Zero silent failures
+- Every action logged and auditable
+
+REQUIRED PROJECT STRUCTURE (STRICT)
+/  
+├── main.py  
+├── keep_alive.py  
+├── setup.py  
+├── .env  
+├── cogs/  
+│   ├── trading.py  
+│   ├── inventory.py  
+│   ├── profile.py  
+│   ├── search.py  
+│   ├── auctions.py  
+│   ├── moderation.py  
+│   ├── analytics.py  
+│   ├── owner.py  
+├── api/  
+│   ├── base.py  
+│   ├── ps99.py  
+│   ├── gag.py  
+│   ├── am.py  
+│   ├── bf.py  
+│   ├── sab.py  
+├── ui/  
+│   ├── embeds.py  
+│   ├── views.py  
+│   ├── modals.py  
+├── utils/  
+│   ├── cache.py  
+│   ├── resolver.py  
+│   ├── fuzzy.py  
+│   ├── validators.py  
+│   ├── rate_limit.py  
+│   ├── trust_engine.py  
+├── data/  
+│   ├── fallback_ps99.json  
+│   ├── fallback_gag.json  
+│   ├── fallback_am.json  
+│   ├── fallback_bf.json  
+│   ├── fallback_sab.json  
+├── locales/  
+│   ├── en.json  
+
+UNIVERSAL ITEM API SYSTEM (NON-NEGOTIABLE)
+RULE: Every item name, icon, rarity, and value MUST be resolved via API or verified dataset.
+
+API ADAPTER INTERFACE
+Each game adapter implements:
+class GameAPIAdapter:
+    async def fetch_items(self) -> list
+    async def fetch_item(self, item_id: str)
+    async def fetch_values(self) -> dict
+    async def fetch_icons(self) -> dict
+    async def health_check(self) -> bool
+
+GAME DATA SOURCES
+PS99:
+- BIG Games official API
+- RAP values
+- Official icons
+- Huge/Titanic flags
+
+GAG:
+- GAGAPI
+- Wiki scrape fallback
+- Roblox CDN icons
+
+Adopt Me:
+- Wiki structured data
+- CDN icons
+- Verified snapshots
+
+Blox Fruits:
+- RapidAPI
+- Stock timers
+- Awakening metadata
+
+Steal a Brainrot:
+- Community JSON
+- Wiki icon fallback
+
+UNIVERSAL ITEM RESOLVER (CORE ENGINE)
+Resolution Pipeline:
+User Input
+→ Normalize
+→ API Lookup
+→ Alias Match
+→ Fuzzy Match (Levenshtein ≤ 2)
+→ Suggest Top 3
+→ Reject if ambiguous
+
+Behavior:
+- Case-insensitive
+- Typo-tolerant
+- Alias-aware
+- Never invent items
+
+ICON RESOLUTION SYSTEM
+Priority:
+1. Official game CDN
+2. Wiki image
+3. Roblox Asset Delivery
+4. Cached fallback
+
+Rules:
+- PNG/WEBP only
+- 256×256 max
+- Cached by SHA hash
+- Weekly verification
+
+TRADE LIFECYCLE (MODEL 1 — FINAL)
+draft
+→ pending
+→ accepted
+→ locked
+→ trust_check
+→ in_game_trade
+→ verification
+→ completed / disputed / expired
+→ archived
+
+TRUST ENGINE (UNIQUE)
+Factors:
+- Roblox account age
+- Discord account age
+- Trade completion ratio
+- Dispute history
+- Value imbalance
+- Item rarity risk
+- Behavior patterns
+
+Output:
+- Safe
+- Caution
+- High Risk
+
+High-risk trades require:
+- Extra confirmations
+- Mandatory proof
+- Silent moderator alert
+
+IN-GAME HANDOFF (CRITICAL UX)
+Bot generates a handoff embed with:
+- Game-specific instructions
+- Platform-aware (PC/Mobile)
+- Countdown timer
+- Immutable trade summary
+
+Buttons:
+- I traded in-game
+- Something went wrong
+- Upload proof
+
+IMMUTABLE TRADE RECEIPTS
+Every completed trade generates:
+- Trade hash (SHA-256)
+- Timestamp
+- Both users
+- Item snapshot
+- Trust score
+- Confirmation signatures
+
+Receipts are:
+- Non-editable
+- Mod-auditable
+- Verifiable via /verify_trade
+
+ANTI-SCAM INTELLIGENCE
+Detects:
+- Lowball spam
+- Cancel abuse
+- Pressure tactics
+- Bait-and-switch
+- Scam phrases
+
+Consequences:
+- Safety score reduction
+- Search visibility reduction
+- Silent mod alerts
+
+REPUTATION SYSTEM (MULTI-LAYER)
+Metrics:
+- Reliability
+- Fairness
+- Responsiveness
+- Proof compliance
+- Trust index
+
+Display example:
+Trust Index: 94/100
+Tier: Diamond Trader
+
+MODERATION TOOLS
+Commands:
+/audit_trade
+/replay_trade
+/force_resolve
+/rollback_rep
+/flag_user
+
+Includes visual trade timelines.
+
+ANALYTICS
+Server:
+- Trade volume
+- Scam prevention stats
+- Success rate
+- Peak hours
+
+User:
+- Reputation trend
+- Value gained
+- Completion ratio
+
+DATABASE REQUIREMENTS
+items:
+(game, item_id, name, normalized_name, rarity, icon_url, value, tradeable, source, last_verified)
+
+trades:
+(id, requester_id, target_id, status, risk_level, confirmations, receipt_hash, timestamps)
+
+HARD RULES
+- No Roblox automation
+- No fake items
+- No skipping systems
+- No deprecated discord.py features
+- No placeholder logic
+
+BUILD ORDER
+1. Core bot + DB
+2. API adapters + resolver
+3. Inventory & profiles
+4. Trading + trust engine
+5. UI polish
+6. Moderation & analytics
+7. Testing & deployment
+
+FINAL EXPECTATION
+The result must be:
+- Fully deployable on Replit
+- Safe, scalable, and professional
+- Better than any Roblox trading bot currently in existence
