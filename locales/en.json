@@ -1,0 +1,78 @@
+{
+  "commands": {
+    "trade": {
+      "create": {
+        "name": "Create Trade",
+        "description": "Create a new trade offer"
+      },
+      "view": {
+        "name": "View Trade",
+        "description": "View details of a trade"
+      },
+      "history": {
+        "name": "Trade History",
+        "description": "View your trading history"
+      },
+      "cancel": {
+        "name": "Cancel Trade",
+        "description": "Cancel a pending trade"
+      }
+    },
+    "inventory": {
+      "view": {
+        "name": "View Inventory",
+        "description": "View your item inventory"
+      },
+      "add": {
+        "name": "Add Item",
+        "description": "Add an item to your inventory"
+      },
+      "remove": {
+        "name": "Remove Item",
+        "description": "Remove an item from inventory"
+      }
+    }
+  },
+  "messages": {
+    "trade_created": "Trade offer created successfully!",
+    "trade_accepted": "Trade accepted! Please complete the exchange in-game.",
+    "trade_declined": "Trade offer was declined.",
+    "trade_completed": "Trade completed successfully!",
+    "trade_disputed": "Trade has been marked as disputed. A moderator will review.",
+    "trade_expired": "Trade offer has expired.",
+    "trade_cancelled": "Trade has been cancelled.",
+    "item_not_found": "Item not found in the database.",
+    "user_banned": "You are banned from trading.",
+    "rate_limited": "You're doing that too fast. Please wait.",
+    "invalid_input": "Invalid input provided.",
+    "permission_denied": "You don't have permission to do that."
+  },
+  "errors": {
+    "generic": "An error occurred. Please try again.",
+    "api_unavailable": "Game API is currently unavailable.",
+    "database_error": "Database error occurred."
+  },
+  "ui": {
+    "buttons": {
+      "accept": "Accept",
+      "decline": "Decline",
+      "confirm": "Confirm",
+      "cancel": "Cancel",
+      "counter": "Counter Offer",
+      "upload_proof": "Upload Proof",
+      "report": "Report Issue"
+    },
+    "trust_tiers": {
+      "bronze": "Bronze Trader",
+      "silver": "Silver Trader",
+      "gold": "Gold Trader",
+      "platinum": "Platinum Trader",
+      "diamond": "Diamond Trader"
+    },
+    "risk_levels": {
+      "safe": "Safe",
+      "caution": "Caution",
+      "high_risk": "High Risk"
+    }
+  }
+}

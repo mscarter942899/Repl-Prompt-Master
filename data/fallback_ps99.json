@@ -1,0 +1,16 @@
+{
+  "items": [
+    {"id": "huge_cat", "name": "Huge Cat", "rarity": "Huge", "value": 50000000, "tradeable": true, "huge": true},
+    {"id": "huge_dog", "name": "Huge Dog", "rarity": "Huge", "value": 45000000, "tradeable": true, "huge": true},
+    {"id": "huge_dragon", "name": "Huge Dragon", "rarity": "Huge", "value": 100000000, "tradeable": true, "huge": true},
+    {"id": "titanic_cat", "name": "Titanic Cat", "rarity": "Titanic", "value": 500000000, "tradeable": true, "titanic": true},
+    {"id": "titanic_dragon", "name": "Titanic Dragon", "rarity": "Titanic", "value": 1000000000, "tradeable": true, "titanic": true},
+    {"id": "golden_dragon", "name": "Golden Dragon", "rarity": "Legendary", "value": 5000000, "tradeable": true, "golden": true},
+    {"id": "rainbow_unicorn", "name": "Rainbow Unicorn", "rarity": "Legendary", "value": 8000000, "tradeable": true, "rainbow": true},
+    {"id": "dark_matter_cat", "name": "Dark Matter Cat", "rarity": "Epic", "value": 1000000, "tradeable": true},
+    {"id": "cosmic_dog", "name": "Cosmic Dog", "rarity": "Rare", "value": 500000, "tradeable": true},
+    {"id": "pixel_cat", "name": "Pixel Cat", "rarity": "Common", "value": 100000, "tradeable": true}
+  ],
+  "last_updated": "2024-01-01T00:00:00Z",
+  "source": "fallback"
+}

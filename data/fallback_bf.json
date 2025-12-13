@@ -1,0 +1,16 @@
+{
+  "items": [
+    {"id": "dragon_fruit", "name": "Dragon Fruit", "rarity": "Mythical", "value": 100000000, "tradeable": true, "type": "fruit", "awakened": false},
+    {"id": "leopard_fruit", "name": "Leopard Fruit", "rarity": "Mythical", "value": 80000000, "tradeable": true, "type": "fruit", "awakened": false},
+    {"id": "dough_fruit", "name": "Dough Fruit", "rarity": "Mythical", "value": 75000000, "tradeable": true, "type": "fruit", "awakened": false},
+    {"id": "venom_fruit", "name": "Venom Fruit", "rarity": "Mythical", "value": 70000000, "tradeable": true, "type": "fruit", "awakened": false},
+    {"id": "soul_fruit", "name": "Soul Fruit", "rarity": "Mythical", "value": 65000000, "tradeable": true, "type": "fruit", "awakened": false},
+    {"id": "buddha_fruit", "name": "Buddha Fruit", "rarity": "Legendary", "value": 50000000, "tradeable": true, "type": "fruit", "awakened": false},
+    {"id": "phoenix_fruit", "name": "Phoenix Fruit", "rarity": "Legendary", "value": 45000000, "tradeable": true, "type": "fruit", "awakened": false},
+    {"id": "rumble_fruit", "name": "Rumble Fruit", "rarity": "Legendary", "value": 30000000, "tradeable": true, "type": "fruit", "awakened": false},
+    {"id": "gravity_fruit", "name": "Gravity Fruit", "rarity": "Legendary", "value": 25000000, "tradeable": true, "type": "fruit", "awakened": false},
+    {"id": "dark_fruit", "name": "Dark Fruit", "rarity": "Legendary", "value": 20000000, "tradeable": true, "type": "fruit", "awakened": false}
+  ],
+  "last_updated": "2024-01-01T00:00:00Z",
+  "source": "fallback"
+}
