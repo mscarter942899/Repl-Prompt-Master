@@ -295,7 +295,7 @@ class CounterOfferModal(Modal):
         if requesting:
             embed.add_field(name="🎯 They Want", value="\n".join([f"• {i}" for i in requesting[:5]]), inline=True)
         if gems > 0:
-            embed.add_field(name="💎 Diamonds", value=format_value(gems), inline=True)
+            embed.add_field(name=f"{DIAMONDS_EMOJI} Diamonds", value=format_value(gems), inline=True)
         if counter_data['notes']:
             embed.add_field(name="📝 Notes", value=counter_data['notes'][:100], inline=False)
         

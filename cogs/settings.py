@@ -10,13 +10,28 @@ def is_admin():
     """Check if user has administrator or manage_guild permissions."""
     async def predicate(interaction: discord.Interaction) -> bool:
         if not interaction.guild:
+            await interaction.response.send_message(
+                "This command can only be used in a server.",
+                ephemeral=True
+            )
             return False
         member = interaction.guild.get_member(interaction.user.id)
+        has_permission = False
         if member:
-            return member.guild_permissions.administrator or member.guild_permissions.manage_guild
-        if hasattr(interaction.user, 'guild_permissions'):
-            return interaction.user.guild_permissions.administrator or interaction.user.guild_permissions.manage_guild
-        return False
+            has_permission = member.guild_permissions.administrator or member.guild_permissions.manage_guild
+        elif hasattr(interaction.user, 'guild_permissions'):
+            has_permission = interaction.user.guild_permissions.administrator or interaction.user.guild_permissions.manage_guild
+        
+        if not has_permission:
+            embed = discord.Embed(
+                title="Access Denied",
+                description="You need **Administrator** or **Manage Server** permission to use this command.",
+                color=0xE74C3C
+            )
+            embed.set_footer(text="Contact a server administrator if you need access.")
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return False
+        return True
     return app_commands.check(predicate)
 
 

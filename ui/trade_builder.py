@@ -149,7 +149,7 @@ class TradeBuilderView(View):
                 first_icon = item['icon_url']
         
         if self.game == 'ps99' and self.offering_gems > 0:
-            offering_lines.append(f"💎 **{format_value(self.offering_gems)} Diamonds**")
+            offering_lines.append(f"{DIAMONDS_EMOJI} **{format_value(self.offering_gems)} Diamonds**")
             offering_total += self.offering_gems
         
         offering_header = f"📦 YOUR OFFER"
@@ -181,7 +181,7 @@ class TradeBuilderView(View):
             requesting_lines.append(line)
         
         if self.game == 'ps99' and self.requesting_gems > 0:
-            requesting_lines.append(f"💎 **{format_value(self.requesting_gems)} Diamonds**")
+            requesting_lines.append(f"{DIAMONDS_EMOJI} **{format_value(self.requesting_gems)} Diamonds**")
             requesting_total += self.requesting_gems
         
         requesting_header = f"🎯 YOU WANT"
@@ -953,7 +953,7 @@ class QuickAddModal(Modal):
 class GemInputModal(Modal):
     def __init__(self, side: str, current_value: int = 0):
         side_text = "Offer" if side == "offering" else "Request"
-        super().__init__(title=f"💎 {side_text} Diamonds")
+        super().__init__(title=f"{DIAMONDS_EMOJI} {side_text} Diamonds")
         self.side = side
         self.gem_amount: Optional[int] = None
         
@@ -973,12 +973,12 @@ class GemInputModal(Modal):
         if self.gem_amount > 0:
             side_text = "offering" if self.side == "offering" else "requesting"
             await interaction.response.send_message(
-                f"💎 Now {side_text} **{format_value(self.gem_amount)} Diamonds**!",
+                f"{DIAMONDS_EMOJI} Now {side_text} **{format_value(self.gem_amount)} Diamonds**!",
                 ephemeral=True
             )
         else:
             await interaction.response.send_message(
-                "💎 Cleared diamonds from trade.",
+                f"{DIAMONDS_EMOJI} Cleared diamonds from trade.",
                 ephemeral=True
             )
 
@@ -1059,7 +1059,7 @@ def create_trade_preview_embed(trade_data: Dict, requester: discord.User) -> dis
             first_icon = item['icon_url']
     
     if offering_gems > 0:
-        offering_lines.append(f"💎 **{format_value(offering_gems)} Diamonds**")
+        offering_lines.append(f"{DIAMONDS_EMOJI} **{format_value(offering_gems)} Diamonds**")
         total_offering += offering_gems
     
     if offering_lines:
@@ -1090,7 +1090,7 @@ def create_trade_preview_embed(trade_data: Dict, requester: discord.User) -> dis
         requesting_lines.append(line)
     
     if requesting_gems > 0:
-        requesting_lines.append(f"💎 **{format_value(requesting_gems)} Diamonds**")
+        requesting_lines.append(f"{DIAMONDS_EMOJI} **{format_value(requesting_gems)} Diamonds**")
         total_requesting += requesting_gems
     
     if requesting_lines:
