@@ -1,10 +1,7 @@
 import discord
 from discord.ui import View, Button, Select, Modal, TextInput
-from typing import Optional, List, Dict, Any, TYPE_CHECKING, cast
+from typing import Optional, List, Dict, Any, TYPE_CHECKING, cast, Union
 import json
-
-if TYPE_CHECKING:
-    from typing import Union
 
 DIAMONDS_EMOJI = "<:diamonds:1449866490495893577>"
 
@@ -297,18 +294,8 @@ class QuickAddButton(Button):
             await interaction.response.send_message("This isn't your trade builder!", ephemeral=True)
             return
         
-        modal = QuickAddModal(self.view.game, self.side)
+        modal = QuickAddModal(self.view.game, self.side, self.view)
         await interaction.response.send_modal(modal)
-        await modal.wait()
-        
-        if modal.selected_item:
-            if self.side == "offering":
-                self.view.offering_items.append(modal.selected_item)
-            else:
-                self.view.requesting_items.append(modal.selected_item)
-            
-            self.view._build_main_view()
-            await interaction.edit_original_response(embed=self.view.get_summary_embed(), view=self.view)
 
 
 class GemsButton(Button):
@@ -328,18 +315,8 @@ class GemsButton(Button):
             return
         
         current = self.view.offering_gems if self.side == "offering" else self.view.requesting_gems
-        modal = GemInputModal(self.side, current)
+        modal = GemInputModal(self.side, current, self.view)
         await interaction.response.send_modal(modal)
-        await modal.wait()
-        
-        if modal.gem_amount is not None:
-            if self.side == "offering":
-                self.view.offering_gems = modal.gem_amount
-            else:
-                self.view.requesting_gems = modal.gem_amount
-            
-            self.view._build_main_view()
-            await interaction.edit_original_response(embed=self.view.get_summary_embed(), view=self.view)
 
 
 class ManageItemsButton(Button):
@@ -385,14 +362,8 @@ class NotesButton(Button):
             await interaction.response.send_message("This isn't your trade builder!", ephemeral=True)
             return
         
-        modal = NotesModal(self.view.notes)
+        modal = NotesModal(self.view.notes, self.view)
         await interaction.response.send_modal(modal)
-        await modal.wait()
-        
-        if modal.notes_value is not None:
-            self.view.notes = modal.notes_value
-            self.view._build_main_view()
-            await interaction.edit_original_response(embed=self.view.get_summary_embed(), view=self.view)
 
 
 class PreviewButton(Button):
@@ -868,11 +839,12 @@ class ManageItemsView(View):
 
 
 class QuickAddModal(Modal):
-    def __init__(self, game: str, side: str):
+    def __init__(self, game: str, side: str, parent_view: Optional["TradeBuilderView"] = None):
         super().__init__(title=f"Quick Add Item")
         self.game = game
         self.side = side
         self.selected_item: Optional[Dict] = None
+        self.parent_view = parent_view
         
         self.item_name = TextInput(
             label="Item Name",
@@ -916,6 +888,20 @@ class QuickAddModal(Modal):
                 'quantity': qty
             }
             
+            if self.parent_view:
+                if self.side == "offering":
+                    self.parent_view.offering_items.append(self.selected_item)
+                else:
+                    self.parent_view.requesting_items.append(self.selected_item)
+                
+                self.parent_view._build_main_view()
+                
+                try:
+                    if self.parent_view.message:
+                        await self.parent_view.message.edit(embed=self.parent_view.get_summary_embed(), view=self.parent_view)
+                except Exception:
+                    pass
+            
             emoji = RARITY_EMOJIS.get(resolved.get('rarity', 'Common'), '⚪')
             value = resolved.get('value', 0)
             value_text = f" • Value: {format_value(value)}" if value > 0 else ""
@@ -944,6 +930,21 @@ class QuickAddModal(Modal):
                     'icon_url': '',
                     'quantity': qty
                 }
+                
+                if self.parent_view:
+                    if self.side == "offering":
+                        self.parent_view.offering_items.append(self.selected_item)
+                    else:
+                        self.parent_view.requesting_items.append(self.selected_item)
+                    
+                    self.parent_view._build_main_view()
+                    
+                    try:
+                        if self.parent_view.message:
+                            await self.parent_view.message.edit(embed=self.parent_view.get_summary_embed(), view=self.parent_view)
+                    except Exception:
+                        pass
+                
                 await interaction.response.send_message(
                     f"⚠️ **'{item_name}'** not in database. Added as custom item.",
                     ephemeral=True
@@ -951,11 +952,12 @@ class QuickAddModal(Modal):
 
 
 class GemInputModal(Modal):
-    def __init__(self, side: str, current_value: int = 0):
+    def __init__(self, side: str, current_value: int = 0, parent_view: Optional["TradeBuilderView"] = None):
         side_text = "Offer" if side == "offering" else "Request"
-        super().__init__(title=f"{DIAMONDS_EMOJI} {side_text} Diamonds")
+        super().__init__(title=f"{side_text} Diamonds")
         self.side = side
         self.gem_amount: Optional[int] = None
+        self.parent_view = parent_view
         
         self.gems = TextInput(
             label="Diamond Amount",
@@ -969,6 +971,20 @@ class GemInputModal(Modal):
     
     async def on_submit(self, interaction: discord.Interaction):
         self.gem_amount = parse_gem_value(self.gems.value)
+        
+        if self.parent_view:
+            if self.side == "offering":
+                self.parent_view.offering_gems = self.gem_amount
+            else:
+                self.parent_view.requesting_gems = self.gem_amount
+            
+            self.parent_view._build_main_view()
+            
+            try:
+                if self.parent_view.message:
+                    await self.parent_view.message.edit(embed=self.parent_view.get_summary_embed(), view=self.parent_view)
+            except Exception:
+                pass
         
         if self.gem_amount > 0:
             side_text = "offering" if self.side == "offering" else "requesting"
@@ -984,9 +1000,10 @@ class GemInputModal(Modal):
 
 
 class NotesModal(Modal):
-    def __init__(self, current_notes: str = ""):
-        super().__init__(title="📝 Trade Notes")
+    def __init__(self, current_notes: str = "", parent_view: Optional["TradeBuilderView"] = None):
+        super().__init__(title="Trade Notes")
         self.notes_value: Optional[str] = None
+        self.parent_view = parent_view
         
         self.notes = TextInput(
             label="Notes (visible to trade partner)",
@@ -1000,10 +1017,21 @@ class NotesModal(Modal):
     
     async def on_submit(self, interaction: discord.Interaction):
         self.notes_value = self.notes.value.strip() if self.notes.value else ""
+        
+        if self.parent_view:
+            self.parent_view.notes = self.notes_value
+            self.parent_view._build_main_view()
+            
+            try:
+                if self.parent_view.message:
+                    await self.parent_view.message.edit(embed=self.parent_view.get_summary_embed(), view=self.parent_view)
+            except Exception:
+                pass
+        
         if self.notes_value:
-            await interaction.response.send_message("📝 Notes saved!", ephemeral=True)
+            await interaction.response.send_message("Notes saved!", ephemeral=True)
         else:
-            await interaction.response.send_message("📝 Notes cleared!", ephemeral=True)
+            await interaction.response.send_message("Notes cleared!", ephemeral=True)
 
 
 class SearchModal(Modal):
@@ -1025,7 +1053,7 @@ class SearchModal(Modal):
         await interaction.response.defer()
 
 
-def create_trade_preview_embed(trade_data: Dict, requester: discord.User) -> discord.Embed:
+def create_trade_preview_embed(trade_data: Dict, requester: "Union[discord.User, discord.Member]") -> discord.Embed:
     game = trade_data.get('game', 'unknown')
     theme = GAME_THEMES.get(game, {'color': 0x7289DA, 'emoji': '📦', 'name': game.upper()})
     
