@@ -102,7 +102,8 @@ class RobloxTradingBot(commands.Bot):
                 )
 
 async def main():
-    keep_alive()
+    if os.getenv('REPLIT_DEPLOYMENT') or os.getenv('REPL_ID'):
+        keep_alive()
     
     bot = RobloxTradingBot()
     

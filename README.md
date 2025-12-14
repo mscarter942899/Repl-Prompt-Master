@@ -177,6 +177,33 @@ A production-grade Discord bot for secure Roblox trading coordination across mul
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
+## Deployment
+
+### Deploy to Railway
+
+1. **Push your code to GitHub** (see above)
+
+2. **Create a Railway account** at [railway.app](https://railway.app)
+
+3. **Create a new project**
+   - Click "New Project"
+   - Select "Deploy from GitHub repo"
+   - Choose your repository
+
+4. **Add environment variables**
+   - Go to your project's "Variables" tab
+   - Add: `DISCORD_TOKEN` = your bot token
+
+5. **Deploy**
+   - Railway will automatically detect Python and deploy
+   - Your bot will be online 24/7!
+
+### Required Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `DISCORD_TOKEN` | Your Discord bot token (required) |
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
