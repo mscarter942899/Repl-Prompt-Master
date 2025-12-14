@@ -6,7 +6,7 @@ import json
 import os
 
 from api.base import APIRegistry
-from utils.database import init_database, bulk_upsert_items, get_item_count, populate_from_fallback
+from utils.database import init_database, bulk_upsert_items, get_item_count
 
 
 def is_owner():
@@ -107,18 +107,6 @@ class OwnerCog(commands.Cog):
                 refreshed.append(f"❌ {game.upper()}: {str(e)[:50]}")
         
         await interaction.followup.send("\n".join(refreshed))
-    
-    @owner_group.command(name="load_fallback", description="Load fallback data into database")
-    @is_owner()
-    async def load_fallback(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
-        
-        try:
-            results = await populate_from_fallback()
-            text = "\n".join([f"{'✅' if v > 0 else '⚠️'} {k.upper()}: {v} items" for k, v in results.items()])
-            await interaction.followup.send(f"Loaded fallback data:\n{text}")
-        except Exception as e:
-            await interaction.followup.send(f"Error loading fallback: {str(e)}")
     
     @owner_group.command(name="set_source", description="Set custom scraping URL for a game")
     @is_owner()

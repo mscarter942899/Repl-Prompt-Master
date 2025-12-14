@@ -6,7 +6,7 @@ import logging
 from dotenv import load_dotenv
 
 from keep_alive import keep_alive
-from utils.database import init_database, get_item_count, populate_from_fallback
+from utils.database import init_database, get_item_count
 from api import setup_all_adapters
 
 load_dotenv()
@@ -46,13 +46,7 @@ class RobloxTradingBot(commands.Bot):
         await init_database()
         
         item_count = await get_item_count()
-        if item_count == 0:
-            logger.info("Database empty, loading fallback data...")
-            results = await populate_from_fallback()
-            total = sum(results.values())
-            logger.info(f"Loaded {total} items from fallback data")
-        else:
-            logger.info(f"Database has {item_count} items")
+        logger.info(f"Database has {item_count} items")
         
         logger.info("Setting up API adapters...")
         setup_all_adapters()
