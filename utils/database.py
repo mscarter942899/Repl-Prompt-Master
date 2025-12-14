@@ -410,3 +410,45 @@ async def get_all_game_sources() -> Dict[str, str]:
         async with db.execute('SELECT game, values_url FROM game_sources') as cursor:
             rows = await cursor.fetchall()
             return {row['game']: row['values_url'] for row in rows}
+
+
+async def delete_item(game: str, item_id: str) -> bool:
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        cursor = await db.execute(
+            'DELETE FROM items WHERE game = ? AND item_id = ?',
+            (game, item_id)
+        )
+        await db.commit()
+        return cursor.rowcount > 0
+
+
+async def get_all_items_for_game(game: str, limit: int = 100) -> List[Dict]:
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            'SELECT * FROM items WHERE game = ? ORDER BY value DESC LIMIT ?',
+            (game, limit)
+        ) as cursor:
+            rows = await cursor.fetchall()
+            return [dict(row) for row in rows]
+
+
+async def update_item_field(game: str, item_id: str, field: str, value: Any) -> bool:
+    allowed_fields = {'name', 'normalized_name', 'rarity', 'icon_url', 'value', 'tradeable', 'source', 'metadata'}
+    if field not in allowed_fields:
+        raise ValueError(f"Field '{field}' is not allowed to be updated")
+    
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        if field == 'name':
+            normalized = str(value).lower().replace(' ', '').replace('-', '').replace('_', '')
+            cursor = await db.execute(
+                'UPDATE items SET name = ?, normalized_name = ?, last_verified = CURRENT_TIMESTAMP WHERE game = ? AND item_id = ?',
+                (value, normalized, game, item_id)
+            )
+        else:
+            cursor = await db.execute(
+                f'UPDATE items SET {field} = ?, last_verified = CURRENT_TIMESTAMP WHERE game = ? AND item_id = ?',
+                (value, game, item_id)
+            )
+        await db.commit()
+        return cursor.rowcount > 0

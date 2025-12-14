@@ -4,7 +4,7 @@ from discord.ext import commands
 from typing import Optional, List
 
 from utils.resolver import item_resolver
-from api.base import APIRegistry
+from utils.database import get_all_items_for_game
 from ui.embeds import SearchEmbed, GAME_NAMES, GAME_COLORS
 
 class SearchCog(commands.Cog):
@@ -27,15 +27,11 @@ class SearchCog(commands.Cog):
         
         try:
             if not current or len(current) < 1:
-                adapter = APIRegistry.get(game)
-                if adapter:
-                    items = await adapter.fetch_items()
-                    sorted_items = sorted(items, key=lambda x: x.get('value', 0), reverse=True)[:25]
-                    return [
-                        app_commands.Choice(name=f"{item['name'][:50]} ({item.get('value', 0):,.0f})"[:100], value=item['name'][:100])
-                        for item in sorted_items
-                    ]
-                return []
+                items = await get_all_items_for_game(game, limit=25)
+                return [
+                    app_commands.Choice(name=f"{item['name'][:50]} ({item.get('value', 0):,.0f})"[:100], value=item['name'][:100])
+                    for item in items
+                ]
             
             items = await item_resolver.search_items(game, current, limit=25)
             return [
@@ -169,18 +165,14 @@ class SearchCog(commands.Cog):
     async def values(self, interaction: discord.Interaction, game: str):
         await interaction.response.defer()
         
-        adapter = APIRegistry.get(game)
-        if not adapter:
-            await interaction.followup.send("Game not found.", ephemeral=True)
-            return
-        
-        items = await adapter.fetch_items()
+        items = await get_all_items_for_game(game, limit=15)
         
         if not items:
-            await interaction.followup.send("No items found.", ephemeral=True)
+            await interaction.followup.send(
+                f"No items found for this game.\nUse `/manage add` to add items.",
+                ephemeral=True
+            )
             return
-        
-        sorted_items = sorted(items, key=lambda x: x.get('value', 0), reverse=True)[:15]
         
         color = GAME_COLORS.get(game, 0x7289DA)
         embed = discord.Embed(
@@ -189,7 +181,7 @@ class SearchCog(commands.Cog):
             color=color
         )
         
-        for i, item in enumerate(sorted_items, 1):
+        for i, item in enumerate(items, 1):
             name = item.get('name', 'Unknown')
             value = item.get('value', 0)
             rarity = item.get('rarity', 'Unknown')
@@ -199,24 +191,6 @@ class SearchCog(commands.Cog):
                 value=f"Value: {value:,.0f}\nRarity: {rarity}",
                 inline=True
             )
-        
-        await interaction.followup.send(embed=embed)
-    
-    @app_commands.command(name="api_status", description="Check game API status")
-    async def api_status(self, interaction: discord.Interaction):
-        await interaction.response.defer()
-        
-        status = await APIRegistry.health_check_all()
-        
-        embed = discord.Embed(
-            title="API Status",
-            color=0x2ECC71 if all(status.values()) else 0xE74C3C
-        )
-        
-        for game, healthy in status.items():
-            emoji = "✅" if healthy else "❌"
-            name = GAME_NAMES.get(game, game.upper())
-            embed.add_field(name=name, value=f"{emoji} {'Online' if healthy else 'Offline'}", inline=True)
         
         await interaction.followup.send(embed=embed)
 

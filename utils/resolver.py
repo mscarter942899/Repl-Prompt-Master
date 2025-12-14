@@ -1,7 +1,7 @@
 from typing import List, Dict, Optional, Tuple
-from api.base import APIRegistry
 from .fuzzy import fuzzy_matcher
 from .cache import item_cache
+from utils.database import get_item, search_items as db_search_items, get_all_items_for_game
 import json
 
 class ItemResolver:
@@ -34,28 +34,30 @@ class ItemResolver:
         if cached:
             return cached
         
-        adapter = APIRegistry.get(game)
-        if not adapter:
-            return None
-        
-        items = await adapter.fetch_items()
+        items = await get_all_items_for_game(game, limit=1000)
         if not items:
             return None
         
         norm_query = self.normalize(query)
         
         for item in items:
-            if item['normalized_name'] == norm_query or item['id'].lower() == norm_query:
-                await item_cache.set(cache_key, item)
-                return item
+            item_norm = item.get('normalized_name', self.normalize(item.get('name', '')))
+            item_id = item.get('item_id', '').lower()
+            if item_norm == norm_query or item_id == norm_query:
+                result = self._format_item(item)
+                await item_cache.set(cache_key, result)
+                return result
         
         game_aliases = self._item_aliases.get(game, {})
         if norm_query in game_aliases:
             alias_target = game_aliases[norm_query]
             for item in items:
-                if item['normalized_name'] == alias_target or item['id'].lower() == alias_target:
-                    await item_cache.set(cache_key, item)
-                    return item
+                item_norm = item.get('normalized_name', self.normalize(item.get('name', '')))
+                item_id = item.get('item_id', '').lower()
+                if item_norm == alias_target or item_id == alias_target:
+                    result = self._format_item(item)
+                    await item_cache.set(cache_key, result)
+                    return result
         
         item_names = [item['name'] for item in items]
         match = fuzzy_matcher.best_match(query, item_names)
@@ -63,17 +65,37 @@ class ItemResolver:
         if match and match[1] <= 2:
             for item in items:
                 if item['name'] == match[0]:
-                    await item_cache.set(cache_key, item)
-                    return item
+                    result = self._format_item(item)
+                    await item_cache.set(cache_key, result)
+                    return result
         
         return None
     
-    async def search_items(self, game: str, query: str, limit: int = 10) -> List[Dict]:
-        adapter = APIRegistry.get(game)
-        if not adapter:
-            return []
+    def _format_item(self, item: Dict) -> Dict:
+        metadata = {}
+        if item.get('metadata'):
+            try:
+                if isinstance(item['metadata'], str):
+                    metadata = json.loads(item['metadata'])
+                else:
+                    metadata = item['metadata']
+            except:
+                pass
         
-        items = await adapter.fetch_items()
+        return {
+            'id': item.get('item_id', ''),
+            'name': item.get('name', ''),
+            'normalized_name': item.get('normalized_name', ''),
+            'rarity': item.get('rarity', 'Unknown'),
+            'icon_url': item.get('icon_url'),
+            'value': float(item.get('value', 0)),
+            'tradeable': bool(item.get('tradeable', True)),
+            'game': item.get('game', ''),
+            'metadata': metadata
+        }
+    
+    async def search_items(self, game: str, query: str, limit: int = 10) -> List[Dict]:
+        items = await get_all_items_for_game(game, limit=1000)
         if not items:
             return []
         
@@ -84,9 +106,10 @@ class ItemResolver:
         fuzzy_matches = []
         
         for item in items:
-            if item['normalized_name'] == norm_query:
+            item_norm = item.get('normalized_name', self.normalize(item.get('name', '')))
+            if item_norm == norm_query:
                 exact_matches.append((item, 0))
-            elif norm_query in item['normalized_name']:
+            elif norm_query in item_norm:
                 partial_matches.append((item, 1))
             else:
                 dist = fuzzy_matcher.distance(query, item['name'])
@@ -96,27 +119,19 @@ class ItemResolver:
         all_matches = exact_matches + partial_matches + fuzzy_matches
         all_matches.sort(key=lambda x: x[1])
         
-        return [m[0] for m in all_matches[:limit]]
+        return [self._format_item(m[0]) for m in all_matches[:limit]]
     
     async def suggest_items(self, game: str, query: str, limit: int = 3) -> List[Dict]:
         return await self.search_items(game, query, limit)
     
     async def validate_item(self, game: str, item_id: str) -> bool:
-        adapter = APIRegistry.get(game)
-        if not adapter:
-            return False
-        
-        item = await adapter.fetch_item(item_id)
+        item = await get_item(game, item_id)
         return item is not None
     
     async def get_item_value(self, game: str, item_id: str) -> Optional[float]:
-        adapter = APIRegistry.get(game)
-        if not adapter:
-            return None
-        
-        item = await adapter.fetch_item(item_id)
+        item = await get_item(game, item_id)
         if item:
-            return item.get('value', 0)
+            return float(item.get('value', 0))
         return None
     
     def register_alias(self, game: str, alias: str, target: str) -> None:

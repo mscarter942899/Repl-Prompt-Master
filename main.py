@@ -36,7 +36,8 @@ class RobloxTradingBot(commands.Bot):
             'cogs.auctions',
             'cogs.moderation',
             'cogs.analytics',
-            'cogs.owner'
+            'cogs.owner',
+            'cogs.item_manage'
         ]
     
     async def setup_hook(self):
