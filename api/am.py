@@ -29,28 +29,38 @@ class AdoptMeAdapter(GameAPIAdapter):
             return cached
         
         items = []
+        
+        items = self._load_fallback()
+        if items:
+            print(f"AM: Loaded {len(items)} items from fallback data")
+        
         try:
             session = await self.get_session()
             url = await self._get_current_url()
-            items = await WebScraper.scrape_items(
+            scraped_items = await WebScraper.scrape_items(
                 session, url, self.game_name,
                 rarity_list=self.rarity_list
             )
             
-            for item in items:
-                name_lower = item['name'].lower()
-                item['metadata'] = {
-                    'neon': 'neon' in name_lower,
-                    'mega_neon': 'mega' in name_lower
-                }
+            junk_keywords = ['logo', 'menu', 'toggle', 'search', 'filter', 'nav', 'footer', 'header', 'sidebar', 'discord', 'twitter']
+            valid_scraped = [
+                item for item in scraped_items 
+                if (item.get('value', 0) > 0 or item.get('icon_url'))
+                and not any(kw in item.get('name', '').lower() for kw in junk_keywords)
+                and len(item.get('name', '')) > 2
+            ]
             
-            if items:
+            if len(valid_scraped) > 10:
+                for item in valid_scraped:
+                    name_lower = item['name'].lower()
+                    item['metadata'] = {
+                        'neon': 'neon' in name_lower,
+                        'mega_neon': 'mega' in name_lower
+                    }
+                items = valid_scraped
                 print(f"AM: Fetched {len(items)} items from {url}")
         except Exception as e:
-            print(f"Error fetching AM values: {e}")
-        
-        if not items:
-            items = self._load_fallback()
+            print(f"AM: Scraping failed (using fallback): {e}")
         
         if items:
             self._set_cached('items', items)

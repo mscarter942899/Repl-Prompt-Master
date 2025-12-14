@@ -29,20 +29,32 @@ class GAGAdapter(GameAPIAdapter):
             return cached
         
         items = []
+        
+        items = self._load_fallback()
+        if items:
+            print(f"GAG: Loaded {len(items)} items from fallback data")
+        
         try:
             session = await self.get_session()
             url = await self._get_current_url()
-            items = await WebScraper.scrape_items(
+            scraped_items = await WebScraper.scrape_items(
                 session, url, self.game_name, 
                 rarity_list=self.rarity_list
             )
-            if items:
+            
+            junk_keywords = ['logo', 'menu', 'toggle', 'search', 'filter', 'nav', 'footer', 'header', 'sidebar', 'discord', 'twitter', 'bloxgrind', 'join']
+            valid_scraped = [
+                item for item in scraped_items 
+                if (item.get('value', 0) > 0 or item.get('icon_url'))
+                and not any(kw in item.get('name', '').lower() for kw in junk_keywords)
+                and len(item.get('name', '')) > 2
+            ]
+            
+            if len(valid_scraped) > 10:
+                items = valid_scraped
                 print(f"GAG: Fetched {len(items)} items from {url}")
         except Exception as e:
-            print(f"Error fetching GAG values: {e}")
-        
-        if not items:
-            items = self._load_fallback()
+            print(f"GAG: Scraping failed (using fallback): {e}")
         
         if items:
             self._set_cached('items', items)
