@@ -49,6 +49,16 @@ Thumbs.db
 # Replit
 .cache/
 .upm/
+.replit
+replit.nix
+.breakpoints
+uv.lock
 
 # Project specific
 .local/
+attached_assets/
+
+# Secrets
+*.pem
+*.key
+secrets.json
