@@ -3,7 +3,7 @@ from discord import app_commands
 from discord.ext import commands
 from typing import Optional
 
-from utils.database import get_guild_settings, set_guild_settings, set_trade_channel
+from utils.database import get_guild_settings, set_guild_settings, set_trade_channel, set_game_trade_channel, get_all_game_trade_channels
 
 
 class SettingsCog(commands.Cog):
@@ -12,10 +12,28 @@ class SettingsCog(commands.Cog):
     
     settings_group = app_commands.Group(name="settings", description="Server settings commands")
     
+    GAME_NAMES = {
+        "ps99": "Pet Simulator 99",
+        "gag": "Grow a Garden", 
+        "am": "Adopt Me",
+        "bf": "Blox Fruits",
+        "sab": "Steal a Brainrot"
+    }
+    
     @settings_group.command(name="tradechannel", description="Set the channel where trade announcements are posted")
-    @app_commands.describe(channel="The channel for trade announcements (leave empty to disable)")
+    @app_commands.describe(
+        channel="The channel for trade announcements (leave empty to disable)",
+        game="Set channel for a specific game (optional - if not set, applies to all games)"
+    )
+    @app_commands.choices(game=[
+        app_commands.Choice(name="Pet Simulator 99", value="ps99"),
+        app_commands.Choice(name="Grow a Garden", value="gag"),
+        app_commands.Choice(name="Adopt Me", value="am"),
+        app_commands.Choice(name="Blox Fruits", value="bf"),
+        app_commands.Choice(name="Steal a Brainrot", value="sab")
+    ])
     @app_commands.default_permissions(manage_guild=True)
-    async def set_trade_channel_cmd(self, interaction: discord.Interaction, channel: Optional[discord.TextChannel] = None):
+    async def set_trade_channel_cmd(self, interaction: discord.Interaction, channel: Optional[discord.TextChannel] = None, game: Optional[str] = None):
         if not interaction.guild:
             await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
             return
@@ -29,28 +47,53 @@ class SettingsCog(commands.Cog):
                 )
                 return
             
-            await set_trade_channel(interaction.guild.id, channel.id)
-            
-            embed = discord.Embed(
-                title="Trade Channel Configured",
-                color=0x2ECC71,
-                description=f"Trade announcements will now be posted to {channel.mention}"
-            )
-            embed.add_field(
-                name="What happens now?",
-                value="When users create trades without specifying a target, "
-                      "the trade will be announced in this channel so others can see and respond!",
-                inline=False
-            )
-            embed.set_footer(text="Use /settings tradechannel without a channel to disable")
+            if game:
+                await set_game_trade_channel(interaction.guild.id, game, channel.id)
+                game_name = self.GAME_NAMES.get(game, game)
+                
+                embed = discord.Embed(
+                    title="Game Trade Channel Configured",
+                    color=0x2ECC71,
+                    description=f"**{game_name}** trades will now be posted to {channel.mention}"
+                )
+                embed.add_field(
+                    name="What happens now?",
+                    value=f"When users create trades for {game_name} without specifying a target, "
+                          f"the trade will be announced in this channel!",
+                    inline=False
+                )
+                embed.set_footer(text=f"Use /settings tradechannel game:{game} without a channel to disable")
+            else:
+                await set_trade_channel(interaction.guild.id, channel.id)
+                
+                embed = discord.Embed(
+                    title="Default Trade Channel Configured",
+                    color=0x2ECC71,
+                    description=f"Trade announcements will now be posted to {channel.mention}"
+                )
+                embed.add_field(
+                    name="What happens now?",
+                    value="When users create trades without specifying a target, "
+                          "the trade will be announced in this channel (unless a game-specific channel is set).",
+                    inline=False
+                )
+                embed.set_footer(text="Use /settings tradechannel without a channel to disable")
             
             await interaction.response.send_message(embed=embed)
         else:
-            await set_trade_channel(interaction.guild.id, None)
-            await interaction.response.send_message(
-                "Trade announcements have been disabled. Trades will only be sent directly to users.",
-                ephemeral=True
-            )
+            if game:
+                await set_game_trade_channel(interaction.guild.id, game, None)
+                game_name = self.GAME_NAMES.get(game, game)
+                await interaction.response.send_message(
+                    f"Trade channel for **{game_name}** has been removed. Trades will use the default channel.",
+                    ephemeral=True
+                )
+            else:
+                await set_trade_channel(interaction.guild.id, None)
+                await interaction.response.send_message(
+                    "Default trade channel has been disabled. Trades will only be sent directly to users.",
+                    ephemeral=True
+                )
     
     @settings_group.command(name="view", description="View current server settings")
     @app_commands.default_permissions(manage_guild=True)

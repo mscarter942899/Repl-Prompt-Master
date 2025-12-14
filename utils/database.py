@@ -200,6 +200,18 @@ async def init_database():
             )
         ''')
         
+        await db.execute('''
+            CREATE TABLE IF NOT EXISTS game_trade_channels (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id INTEGER NOT NULL,
+                game TEXT NOT NULL,
+                channel_id INTEGER NOT NULL,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(guild_id, game)
+            )
+        ''')
+        
+        await db.execute('CREATE INDEX IF NOT EXISTS idx_game_trade_channels ON game_trade_channels(guild_id, game)')
         await db.execute('CREATE INDEX IF NOT EXISTS idx_items_game ON items(game)')
         await db.execute('CREATE INDEX IF NOT EXISTS idx_items_normalized ON items(normalized_name)')
         await db.execute('CREATE INDEX IF NOT EXISTS idx_trades_status ON trades(status)')
@@ -501,6 +513,50 @@ async def get_trade_channel(guild_id: int) -> Optional[int]:
 
 async def set_trade_channel(guild_id: int, channel_id: Optional[int]) -> None:
     await set_guild_settings(guild_id, trade_channel_id=channel_id)
+
+
+async def set_game_trade_channel(guild_id: int, game: str, channel_id: Optional[int]) -> None:
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        if channel_id:
+            await db.execute('''
+                INSERT INTO game_trade_channels (guild_id, game, channel_id, updated_at)
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(guild_id, game) DO UPDATE SET
+                    channel_id = excluded.channel_id,
+                    updated_at = CURRENT_TIMESTAMP
+            ''', (guild_id, game, channel_id))
+        else:
+            await db.execute(
+                'DELETE FROM game_trade_channels WHERE guild_id = ? AND game = ?',
+                (guild_id, game)
+            )
+        await db.commit()
+
+
+async def get_game_trade_channel(guild_id: int, game: str) -> Optional[int]:
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        async with db.execute(
+            'SELECT channel_id FROM game_trade_channels WHERE guild_id = ? AND game = ?',
+            (guild_id, game)
+        ) as cursor:
+            row = await cursor.fetchone()
+            if row:
+                return row[0]
+    settings = await get_guild_settings(guild_id)
+    if settings and settings.get('announcement_enabled'):
+        return settings.get('trade_channel_id')
+    return None
+
+
+async def get_all_game_trade_channels(guild_id: int) -> Dict[str, int]:
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            'SELECT game, channel_id FROM game_trade_channels WHERE guild_id = ?',
+            (guild_id,)
+        ) as cursor:
+            rows = await cursor.fetchall()
+            return {row['game']: row['channel_id'] for row in rows}
 
 
 async def bulk_upsert_items(items: List[Dict], source: str = 'api') -> int:
