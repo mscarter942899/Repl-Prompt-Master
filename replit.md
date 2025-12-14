@@ -105,3 +105,14 @@ The scraper (`utils/scraper.py`) is designed to work with various website layout
 - **Multiple layout support**: Handles card layouts, tables, and list-based sites
 - **Value formats**: Recognizes values with K/M/B/T multipliers, commas, labels (Value:, Price:, etc.)
 - **Rate limiting**: 0.5 second delay between page requests to avoid overwhelming sites
+- **Enhanced image extraction**: Supports lazy-loaded images (data-src, data-lazy-src, data-original), srcset, picture elements, and CSS background images
+- **Comprehensive selectors**: Uses 20+ CSS selectors to find item cards including data attributes, class patterns, and structural detection
+- **Smart name extraction**: Prioritizes data attributes, heading tags, image alt text, and structured text
+
+## Trade Features
+- Trade offers display item thumbnails (first item image)
+- Items show rarity with color-coded emojis
+- Values displayed with K/M/B formatting
+- Total trade value calculated automatically
+- Interactive buttons: Accept, Decline, Counter Offer
+- Handoff buttons: "I traded in-game", "Something went wrong", "Upload Proof"
