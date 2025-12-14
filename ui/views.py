@@ -4,6 +4,36 @@ from typing import Optional, List, Dict
 import json
 
 
+async def post_trade_to_feed(client, guild, trade, requester_id: int, target_id: int):
+    """Post completed trade to the trade feed channel if configured."""
+    if not guild:
+        return
+    
+    try:
+        from utils.database import get_guild_settings
+        from ui.enhanced_embeds import EnhancedTradeEmbed
+        
+        settings = await get_guild_settings(guild.id)
+        if not settings:
+            return
+        
+        if not settings.get('trade_feed_enabled') or not settings.get('trade_feed_channel_id'):
+            return
+        
+        channel = guild.get_channel(settings['trade_feed_channel_id'])
+        if not channel:
+            return
+        
+        requester = await client.fetch_user(requester_id)
+        target = await client.fetch_user(target_id)
+        
+        embed = EnhancedTradeEmbed.create_trade_feed_entry(trade, requester, target)
+        
+        await channel.send(embed=embed)
+    except Exception as e:
+        print(f"Error posting to trade feed: {e}")
+
+
 class DynamicTradeView(View):
     def __init__(self, trade_id: int, requester_id: int, target_id: int):
         super().__init__(timeout=None)
@@ -599,6 +629,8 @@ class ConfirmTradeButton(Button):
             embed.set_footer(text="Trust scores updated!")
             
             await interaction.response.send_message(embed=embed)
+            
+            await post_trade_to_feed(interaction.client, interaction.guild, trade, self.requester_id, self.target_id)
         else:
             await interaction.response.send_message("Confirmed! Waiting for the other party...", ephemeral=True)
 
@@ -1066,6 +1098,8 @@ class TicketConfirmTradeButton(Button):
             embed.set_footer(text="Trust scores updated! This ticket will be archived.")
             
             await interaction.response.send_message(embed=embed)
+            
+            await post_trade_to_feed(interaction.client, interaction.guild, trade, self.requester_id, self.target_id)
             
             if isinstance(interaction.channel, discord.Thread):
                 await interaction.followup.send("🔒 This ticket will be archived in 1 minute. Thank you for trading safely!")

@@ -35,6 +35,14 @@ RARITY_COLORS = {
     'Secret': 0x7C4DFF
 }
 
+GAME_THEMES = {
+    'ps99': {'color': 0x9B59B6, 'emoji': '🐾', 'name': 'Pet Simulator 99'},
+    'gag': {'color': 0x2ECC71, 'emoji': '🌱', 'name': 'Grow a Garden'},
+    'am': {'color': 0xE74C3C, 'emoji': '🏠', 'name': 'Adopt Me'},
+    'bf': {'color': 0x3498DB, 'emoji': '🍎', 'name': 'Blox Fruits'},
+    'sab': {'color': 0xF39C12, 'emoji': '🧠', 'name': 'Steal a Brainrot'}
+}
+
 
 def format_value(value: float) -> str:
     if value >= 1_000_000_000_000:
@@ -68,7 +76,7 @@ def parse_gem_value(text: str) -> int:
 
 class TradeBuilderView(View):
     def __init__(self, user_id: int, game: str, target_id: Optional[int] = None):
-        super().__init__(timeout=600)
+        super().__init__(timeout=900)
         self.user_id = user_id
         self.game = game
         self.target_id = target_id
@@ -79,99 +87,143 @@ class TradeBuilderView(View):
         self.notes: str = ""
         self.completed = False
         self.cancelled = False
+        self.current_mode = "main"
         
-        self._build_view()
+        self._build_main_view()
     
-    def _build_view(self):
+    def _build_main_view(self):
         self.clear_items()
+        self.current_mode = "main"
         
-        self.add_item(AddOfferingItemButton())
-        self.add_item(AddRequestingItemButton())
+        self.add_item(BrowseItemsButton("offering"))
+        self.add_item(BrowseItemsButton("requesting"))
+        self.add_item(QuickAddButton("offering"))
+        self.add_item(QuickAddButton("requesting"))
         
         if self.game == 'ps99':
-            self.add_item(SetOfferingGemsButton())
-            self.add_item(SetRequestingGemsButton())
+            self.add_item(GemsButton("offering", self.offering_gems))
+            self.add_item(GemsButton("requesting", self.requesting_gems))
         
-        self.add_item(AddNotesButton())
-        self.add_item(PreviewTradeButton())
-        self.add_item(ConfirmTradeButton())
-        self.add_item(CancelTradeButton())
+        if self.offering_items:
+            self.add_item(ManageItemsButton("offering", len(self.offering_items)))
+        if self.requesting_items:
+            self.add_item(ManageItemsButton("requesting", len(self.requesting_items)))
+        
+        self.add_item(NotesButton(bool(self.notes)))
+        self.add_item(PreviewButton())
+        self.add_item(ConfirmButton())
+        self.add_item(CancelButton())
     
     def get_summary_embed(self) -> discord.Embed:
-        from ui.embeds import GAME_NAMES, GAME_COLORS
+        theme = GAME_THEMES.get(self.game, {'color': 0x7289DA, 'emoji': '📦', 'name': self.game.upper()})
         
-        color = GAME_COLORS.get(self.game, 0x7289DA)
         embed = discord.Embed(
-            title=f"🔨 Trade Builder - {GAME_NAMES.get(self.game, self.game.upper())}",
-            description="Use the buttons below to build your trade offer!",
-            color=color
+            title=f"{theme['emoji']} Trade Builder - {theme['name']}",
+            description="Create your perfect trade offer using the buttons below!",
+            color=theme['color']
         )
         
         offering_lines = []
         offering_total = 0
+        first_icon = None
+        
         for item in self.offering_items:
             emoji = RARITY_EMOJIS.get(item.get('rarity', 'Common'), '⚪')
             value = item.get('value', 0)
-            offering_total += value
+            qty = item.get('quantity', 1)
+            offering_total += value * qty
+            
             line = f"{emoji} **{item['name']}**"
+            if qty > 1:
+                line += f" x{qty}"
             if value > 0:
-                line += f" ({format_value(value)})"
+                line += f" • {format_value(value)}"
             offering_lines.append(line)
+            
+            if not first_icon and item.get('icon_url'):
+                first_icon = item['icon_url']
         
         if self.game == 'ps99' and self.offering_gems > 0:
             offering_lines.append(f"💎 **{format_value(self.offering_gems)} Diamonds**")
             offering_total += self.offering_gems
         
+        offering_header = f"📦 YOUR OFFER"
+        if self.offering_items:
+            offering_header += f" ({len(self.offering_items)} items)"
+        
         if offering_lines:
-            embed.add_field(
-                name=f"📦 Offering ({len(self.offering_items)} items)",
-                value="\n".join(offering_lines[:10]) + (f"\n... +{len(offering_lines)-10} more" if len(offering_lines) > 10 else ""),
-                inline=True
-            )
+            offer_text = "\n".join(offering_lines[:8])
+            if len(offering_lines) > 8:
+                offer_text += f"\n*+{len(offering_lines)-8} more items...*"
+            embed.add_field(name=offering_header, value=offer_text, inline=True)
         else:
-            embed.add_field(name="📦 Offering", value="*No items added*", inline=True)
+            embed.add_field(name=offering_header, value="*Click 'Browse Items' or 'Quick Add' to add items*", inline=True)
         
         requesting_lines = []
         requesting_total = 0
+        
         for item in self.requesting_items:
             emoji = RARITY_EMOJIS.get(item.get('rarity', 'Common'), '⚪')
             value = item.get('value', 0)
-            requesting_total += value
+            qty = item.get('quantity', 1)
+            requesting_total += value * qty
+            
             line = f"{emoji} **{item['name']}**"
+            if qty > 1:
+                line += f" x{qty}"
             if value > 0:
-                line += f" ({format_value(value)})"
+                line += f" • {format_value(value)}"
             requesting_lines.append(line)
         
         if self.game == 'ps99' and self.requesting_gems > 0:
             requesting_lines.append(f"💎 **{format_value(self.requesting_gems)} Diamonds**")
             requesting_total += self.requesting_gems
         
+        requesting_header = f"🎯 YOU WANT"
+        if self.requesting_items:
+            requesting_header += f" ({len(self.requesting_items)} items)"
+        
         if requesting_lines:
-            embed.add_field(
-                name=f"🎯 Requesting ({len(self.requesting_items)} items)",
-                value="\n".join(requesting_lines[:10]) + (f"\n... +{len(requesting_lines)-10} more" if len(requesting_lines) > 10 else ""),
-                inline=True
-            )
+            request_text = "\n".join(requesting_lines[:8])
+            if len(requesting_lines) > 8:
+                request_text += f"\n*+{len(requesting_lines)-8} more items...*"
+            embed.add_field(name=requesting_header, value=request_text, inline=True)
         else:
-            embed.add_field(name="🎯 Requesting", value="*Open to offers*", inline=True)
+            embed.add_field(name=requesting_header, value="*Leave empty for open offers*", inline=True)
         
-        embed.add_field(name="\u200b", value="\u200b", inline=True)
-        
-        value_diff = offering_total - requesting_total
         if offering_total > 0 or requesting_total > 0:
-            value_text = f"**Offering:** {format_value(offering_total)}\n**Requesting:** {format_value(requesting_total)}\n"
-            if value_diff > 0:
-                value_text += f"📈 Overpaying by {format_value(abs(value_diff))}"
-            elif value_diff < 0:
-                value_text += f"📉 Underpaying by {format_value(abs(value_diff))}"
-            else:
-                value_text += "⚖️ Fair trade!"
-            embed.add_field(name="💰 Value Analysis", value=value_text, inline=False)
+            value_diff = offering_total - requesting_total
+            
+            analysis_lines = [
+                f"📊 **Your Offer:** {format_value(offering_total)}",
+                f"📊 **You Want:** {format_value(requesting_total)}"
+            ]
+            
+            if requesting_total > 0:
+                if value_diff > 0:
+                    pct = (value_diff / requesting_total * 100) if requesting_total > 0 else 0
+                    analysis_lines.append(f"\n📈 **OVERPAY** by {format_value(abs(value_diff))} (+{pct:.1f}%)")
+                elif value_diff < 0:
+                    pct = (abs(value_diff) / offering_total * 100) if offering_total > 0 else 0
+                    analysis_lines.append(f"\n📉 **UNDERPAY** by {format_value(abs(value_diff))} (-{pct:.1f}%)")
+                else:
+                    analysis_lines.append("\n⚖️ **FAIR TRADE**")
+            
+            embed.add_field(name="💰 Value Analysis", value="\n".join(analysis_lines), inline=False)
         
         if self.notes:
             embed.add_field(name="📝 Notes", value=self.notes[:200], inline=False)
         
-        embed.set_footer(text="Click 'Confirm Trade' when ready to post!")
+        status_parts = []
+        if self.offering_items or self.offering_gems > 0:
+            status_parts.append("✅ Offer ready")
+        else:
+            status_parts.append("⚠️ Add items to offer")
+        
+        embed.set_footer(text=" • ".join(status_parts) + " | Click ✅ Confirm when ready!")
+        
+        if first_icon:
+            embed.set_thumbnail(url=first_icon)
         
         return embed
     
@@ -186,106 +238,130 @@ class TradeBuilderView(View):
         }
 
 
-class AddOfferingItemButton(Button):
-    def __init__(self):
-        super().__init__(
-            label="Add Offering Item",
-            style=discord.ButtonStyle.success,
-            emoji="➕",
-            row=0
-        )
+class BrowseItemsButton(Button):
+    def __init__(self, side: str):
+        self.side = side
+        emoji = "📦" if side == "offering" else "🎯"
+        label = "Browse Items (Offer)" if side == "offering" else "Browse Items (Want)"
+        style = discord.ButtonStyle.success if side == "offering" else discord.ButtonStyle.primary
+        super().__init__(label=label, emoji=emoji, style=style, row=0)
     
     async def callback(self, interaction: discord.Interaction):
         if interaction.user.id != self.view.user_id:
             await interaction.response.send_message("This isn't your trade builder!", ephemeral=True)
             return
         
-        modal = ItemSearchModal(self.view.game, "offering")
+        from utils.database import get_all_items_for_game
+        
+        items = await get_all_items_for_game(self.view.game, limit=100)
+        
+        if not items:
+            await interaction.response.send_message(
+                "No items found in database for this game. Use Quick Add instead!",
+                ephemeral=True
+            )
+            return
+        
+        selector_view = ItemBrowserView(
+            user_id=self.view.user_id,
+            game=self.view.game,
+            items=items,
+            side=self.side,
+            parent_view=self.view
+        )
+        
+        embed = selector_view.get_embed()
+        await interaction.response.send_message(embed=embed, view=selector_view, ephemeral=True)
+
+
+class QuickAddButton(Button):
+    def __init__(self, side: str):
+        self.side = side
+        emoji = "➕" if side == "offering" else "🔍"
+        label = "Quick Add (Offer)" if side == "offering" else "Quick Add (Want)"
+        style = discord.ButtonStyle.secondary
+        super().__init__(label=label, emoji=emoji, style=style, row=1)
+    
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self.view.user_id:
+            await interaction.response.send_message("This isn't your trade builder!", ephemeral=True)
+            return
+        
+        modal = QuickAddModal(self.view.game, self.side)
         await interaction.response.send_modal(modal)
         await modal.wait()
         
         if modal.selected_item:
-            self.view.offering_items.append(modal.selected_item)
+            if self.side == "offering":
+                self.view.offering_items.append(modal.selected_item)
+            else:
+                self.view.requesting_items.append(modal.selected_item)
+            
+            self.view._build_main_view()
             await interaction.edit_original_response(embed=self.view.get_summary_embed(), view=self.view)
 
 
-class AddRequestingItemButton(Button):
-    def __init__(self):
-        super().__init__(
-            label="Add Requesting Item",
-            style=discord.ButtonStyle.primary,
-            emoji="🎯",
-            row=0
-        )
+class GemsButton(Button):
+    def __init__(self, side: str, current_amount: int):
+        self.side = side
+        label = f"💎 Offer Gems" if side == "offering" else f"💎 Request Gems"
+        if current_amount > 0:
+            label = f"💎 {format_value(current_amount)}"
+        style = discord.ButtonStyle.success if side == "offering" else discord.ButtonStyle.primary
+        super().__init__(label=label, emoji="💎", style=style, row=2)
     
     async def callback(self, interaction: discord.Interaction):
         if interaction.user.id != self.view.user_id:
             await interaction.response.send_message("This isn't your trade builder!", ephemeral=True)
             return
         
-        modal = ItemSearchModal(self.view.game, "requesting")
-        await interaction.response.send_modal(modal)
-        await modal.wait()
-        
-        if modal.selected_item:
-            self.view.requesting_items.append(modal.selected_item)
-            await interaction.edit_original_response(embed=self.view.get_summary_embed(), view=self.view)
-
-
-class SetOfferingGemsButton(Button):
-    def __init__(self):
-        super().__init__(
-            label="Add Offering 💎",
-            style=discord.ButtonStyle.success,
-            emoji="💎",
-            row=1
-        )
-    
-    async def callback(self, interaction: discord.Interaction):
-        if interaction.user.id != self.view.user_id:
-            await interaction.response.send_message("This isn't your trade builder!", ephemeral=True)
-            return
-        
-        modal = GemInputModal("offering", self.view.offering_gems)
+        current = self.view.offering_gems if self.side == "offering" else self.view.requesting_gems
+        modal = GemInputModal(self.side, current)
         await interaction.response.send_modal(modal)
         await modal.wait()
         
         if modal.gem_amount is not None:
-            self.view.offering_gems = modal.gem_amount
+            if self.side == "offering":
+                self.view.offering_gems = modal.gem_amount
+            else:
+                self.view.requesting_gems = modal.gem_amount
+            
+            self.view._build_main_view()
             await interaction.edit_original_response(embed=self.view.get_summary_embed(), view=self.view)
 
 
-class SetRequestingGemsButton(Button):
-    def __init__(self):
-        super().__init__(
-            label="Request 💎",
-            style=discord.ButtonStyle.primary,
-            emoji="💎",
-            row=1
-        )
+class ManageItemsButton(Button):
+    def __init__(self, side: str, count: int):
+        self.side = side
+        label = f"Manage Offer ({count})" if side == "offering" else f"Manage Wants ({count})"
+        super().__init__(label=label, emoji="📋", style=discord.ButtonStyle.secondary, row=2)
     
     async def callback(self, interaction: discord.Interaction):
         if interaction.user.id != self.view.user_id:
             await interaction.response.send_message("This isn't your trade builder!", ephemeral=True)
             return
         
-        modal = GemInputModal("requesting", self.view.requesting_gems)
-        await interaction.response.send_modal(modal)
-        await modal.wait()
+        items = self.view.offering_items if self.side == "offering" else self.view.requesting_items
         
-        if modal.gem_amount is not None:
-            self.view.requesting_gems = modal.gem_amount
-            await interaction.edit_original_response(embed=self.view.get_summary_embed(), view=self.view)
-
-
-class AddNotesButton(Button):
-    def __init__(self):
-        super().__init__(
-            label="Add Notes",
-            style=discord.ButtonStyle.secondary,
-            emoji="📝",
-            row=1
+        if not items:
+            await interaction.response.send_message("No items to manage!", ephemeral=True)
+            return
+        
+        manage_view = ManageItemsView(
+            user_id=self.view.user_id,
+            items=items,
+            side=self.side,
+            parent_view=self.view
         )
+        
+        embed = manage_view.get_embed()
+        await interaction.response.send_message(embed=embed, view=manage_view, ephemeral=True)
+
+
+class NotesButton(Button):
+    def __init__(self, has_notes: bool):
+        label = "📝 Notes" if not has_notes else "📝 Edit Notes"
+        super().__init__(label=label, emoji="📝", style=discord.ButtonStyle.secondary, row=3)
     
     async def callback(self, interaction: discord.Interaction):
         if interaction.user.id != self.view.user_id:
@@ -298,38 +374,30 @@ class AddNotesButton(Button):
         
         if modal.notes_value is not None:
             self.view.notes = modal.notes_value
+            self.view._build_main_view()
             await interaction.edit_original_response(embed=self.view.get_summary_embed(), view=self.view)
 
 
-class PreviewTradeButton(Button):
+class PreviewButton(Button):
     def __init__(self):
-        super().__init__(
-            label="Preview",
-            style=discord.ButtonStyle.secondary,
-            emoji="👁️",
-            row=2
-        )
+        super().__init__(label="Preview", emoji="👁️", style=discord.ButtonStyle.secondary, row=3)
     
     async def callback(self, interaction: discord.Interaction):
         if interaction.user.id != self.view.user_id:
             await interaction.response.send_message("This isn't your trade builder!", ephemeral=True)
             return
         
-        embed = create_trade_preview_embed(
-            self.view.get_trade_data(),
-            interaction.user
+        embed = create_trade_preview_embed(self.view.get_trade_data(), interaction.user)
+        await interaction.response.send_message(
+            "**This is how your trade will appear to others:**",
+            embed=embed,
+            ephemeral=True
         )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
-class ConfirmTradeButton(Button):
+class ConfirmButton(Button):
     def __init__(self):
-        super().__init__(
-            label="Confirm Trade",
-            style=discord.ButtonStyle.success,
-            emoji="✅",
-            row=2
-        )
+        super().__init__(label="Confirm Trade", emoji="✅", style=discord.ButtonStyle.success, row=4)
     
     async def callback(self, interaction: discord.Interaction):
         if interaction.user.id != self.view.user_id:
@@ -338,7 +406,7 @@ class ConfirmTradeButton(Button):
         
         if not self.view.offering_items and self.view.offering_gems == 0:
             await interaction.response.send_message(
-                "You must offer at least one item or some gems!",
+                "⚠️ You must offer at least one item or some diamonds!",
                 ephemeral=True
             )
             return
@@ -348,14 +416,9 @@ class ConfirmTradeButton(Button):
         await interaction.response.defer()
 
 
-class CancelTradeButton(Button):
+class CancelButton(Button):
     def __init__(self):
-        super().__init__(
-            label="Cancel",
-            style=discord.ButtonStyle.danger,
-            emoji="❌",
-            row=2
-        )
+        super().__init__(label="Cancel", emoji="❌", style=discord.ButtonStyle.danger, row=4)
     
     async def callback(self, interaction: discord.Interaction):
         if interaction.user.id != self.view.user_id:
@@ -367,16 +430,397 @@ class CancelTradeButton(Button):
         await interaction.response.send_message("Trade creation cancelled.", ephemeral=True)
 
 
-class ItemSearchModal(Modal):
-    def __init__(self, game: str, trade_side: str):
-        super().__init__(title=f"Add Item to {trade_side.title()}")
+class ItemBrowserView(View):
+    def __init__(self, user_id: int, game: str, items: List[Dict], side: str, parent_view: TradeBuilderView):
+        super().__init__(timeout=300)
+        self.user_id = user_id
         self.game = game
-        self.trade_side = trade_side
+        self.items = items
+        self.side = side
+        self.parent_view = parent_view
+        self.current_page = 0
+        self.items_per_page = 25
+        self.selected_items: List[Dict] = []
+        self.filter_rarity = "all"
+        self.search_query = ""
+        
+        self._build_view()
+    
+    def _get_filtered_items(self) -> List[Dict]:
+        filtered = self.items
+        
+        if self.filter_rarity != "all":
+            filtered = [i for i in filtered if i.get('rarity', '').lower() == self.filter_rarity.lower()]
+        
+        if self.search_query:
+            query = self.search_query.lower()
+            filtered = [i for i in filtered if query in i.get('name', '').lower()]
+        
+        return filtered
+    
+    def _build_view(self):
+        self.clear_items()
+        
+        filtered_items = self._get_filtered_items()
+        start_idx = self.current_page * self.items_per_page
+        end_idx = min(start_idx + self.items_per_page, len(filtered_items))
+        page_items = filtered_items[start_idx:end_idx]
+        
+        if page_items:
+            options = []
+            for item in page_items:
+                emoji = RARITY_EMOJIS.get(item.get('rarity', 'Common'), '⚪')
+                value = item.get('value', 0)
+                desc = f"{item.get('rarity', 'Unknown')} • {format_value(value)}" if value > 0 else item.get('rarity', 'Unknown')
+                
+                options.append(discord.SelectOption(
+                    label=item['name'][:100],
+                    value=str(item.get('id', item['name']))[:100],
+                    description=desc[:100],
+                    emoji=emoji
+                ))
+            
+            select = Select(
+                placeholder=f"Select items ({start_idx+1}-{end_idx} of {len(filtered_items)})",
+                options=options,
+                min_values=0,
+                max_values=min(len(options), 10),
+                row=0
+            )
+            select.callback = self._on_select
+            self.add_item(select)
+        
+        rarity_options = [
+            discord.SelectOption(label="All Rarities", value="all", emoji="🌈"),
+            discord.SelectOption(label="Common", value="common", emoji="⚪"),
+            discord.SelectOption(label="Uncommon", value="uncommon", emoji="🟢"),
+            discord.SelectOption(label="Rare", value="rare", emoji="🔵"),
+            discord.SelectOption(label="Epic", value="epic", emoji="🟣"),
+            discord.SelectOption(label="Legendary", value="legendary", emoji="🟡"),
+            discord.SelectOption(label="Mythic", value="mythic", emoji="🔴"),
+            discord.SelectOption(label="Titanic", value="titanic", emoji="⭐"),
+            discord.SelectOption(label="Huge", value="huge", emoji="💫"),
+        ]
+        
+        filter_select = Select(
+            placeholder="Filter by rarity...",
+            options=rarity_options,
+            row=1
+        )
+        filter_select.callback = self._on_filter
+        self.add_item(filter_select)
+        
+        search_btn = Button(label="🔍 Search", style=discord.ButtonStyle.secondary, row=2)
+        search_btn.callback = self._on_search
+        self.add_item(search_btn)
+        
+        if len(filtered_items) > self.items_per_page:
+            if self.current_page > 0:
+                prev_btn = Button(label="◀ Prev", style=discord.ButtonStyle.secondary, row=2)
+                prev_btn.callback = self._prev_page
+                self.add_item(prev_btn)
+            
+            max_page = (len(filtered_items) - 1) // self.items_per_page
+            if self.current_page < max_page:
+                next_btn = Button(label="Next ▶", style=discord.ButtonStyle.secondary, row=2)
+                next_btn.callback = self._next_page
+                self.add_item(next_btn)
+        
+        add_btn = Button(
+            label=f"Add Selected ({len(self.selected_items)})",
+            style=discord.ButtonStyle.success,
+            emoji="✅",
+            row=3,
+            disabled=len(self.selected_items) == 0
+        )
+        add_btn.callback = self._add_selected
+        self.add_item(add_btn)
+        
+        close_btn = Button(label="Close", style=discord.ButtonStyle.danger, emoji="❌", row=3)
+        close_btn.callback = self._close
+        self.add_item(close_btn)
+    
+    def get_embed(self) -> discord.Embed:
+        theme = GAME_THEMES.get(self.game, {'color': 0x7289DA, 'emoji': '📦', 'name': self.game.upper()})
+        side_text = "to offer" if self.side == "offering" else "that you want"
+        
+        embed = discord.Embed(
+            title=f"{theme['emoji']} Browse {theme['name']} Items",
+            description=f"Select items {side_text}. You can select up to 10 items at once.",
+            color=theme['color']
+        )
+        
+        filtered_items = self._get_filtered_items()
+        
+        if self.filter_rarity != "all":
+            embed.add_field(name="🏷️ Filter", value=self.filter_rarity.title(), inline=True)
+        
+        if self.search_query:
+            embed.add_field(name="🔍 Search", value=self.search_query, inline=True)
+        
+        embed.add_field(name="📊 Items", value=f"{len(filtered_items)} available", inline=True)
+        
+        if self.selected_items:
+            selected_text = "\n".join([
+                f"{RARITY_EMOJIS.get(i.get('rarity', 'Common'), '⚪')} {i['name']}"
+                for i in self.selected_items[:5]
+            ])
+            if len(self.selected_items) > 5:
+                selected_text += f"\n*+{len(self.selected_items)-5} more...*"
+            embed.add_field(name=f"✅ Selected ({len(self.selected_items)})", value=selected_text, inline=False)
+        
+        if filtered_items and filtered_items[0].get('icon_url'):
+            embed.set_thumbnail(url=filtered_items[0]['icon_url'])
+        
+        return embed
+    
+    async def _on_select(self, interaction: discord.Interaction):
+        if interaction.user.id != self.user_id:
+            return await interaction.response.defer()
+        
+        selected_ids = interaction.data.get('values', [])
+        filtered = self._get_filtered_items()
+        
+        self.selected_items = [
+            item for item in filtered
+            if str(item.get('id', item['name'])) in selected_ids
+        ]
+        
+        self._build_view()
+        await interaction.response.edit_message(embed=self.get_embed(), view=self)
+    
+    async def _on_filter(self, interaction: discord.Interaction):
+        if interaction.user.id != self.user_id:
+            return await interaction.response.defer()
+        
+        self.filter_rarity = interaction.data.get('values', ['all'])[0]
+        self.current_page = 0
+        self.selected_items = []
+        self._build_view()
+        await interaction.response.edit_message(embed=self.get_embed(), view=self)
+    
+    async def _on_search(self, interaction: discord.Interaction):
+        if interaction.user.id != self.user_id:
+            return await interaction.response.defer()
+        
+        modal = SearchModal()
+        await interaction.response.send_modal(modal)
+        await modal.wait()
+        
+        if modal.query is not None:
+            self.search_query = modal.query
+            self.current_page = 0
+            self.selected_items = []
+            self._build_view()
+            await interaction.edit_original_response(embed=self.get_embed(), view=self)
+    
+    async def _prev_page(self, interaction: discord.Interaction):
+        if interaction.user.id != self.user_id:
+            return await interaction.response.defer()
+        
+        self.current_page = max(0, self.current_page - 1)
+        self._build_view()
+        await interaction.response.edit_message(embed=self.get_embed(), view=self)
+    
+    async def _next_page(self, interaction: discord.Interaction):
+        if interaction.user.id != self.user_id:
+            return await interaction.response.defer()
+        
+        filtered = self._get_filtered_items()
+        max_page = (len(filtered) - 1) // self.items_per_page
+        self.current_page = min(max_page, self.current_page + 1)
+        self._build_view()
+        await interaction.response.edit_message(embed=self.get_embed(), view=self)
+    
+    async def _add_selected(self, interaction: discord.Interaction):
+        if interaction.user.id != self.user_id:
+            return await interaction.response.defer()
+        
+        if not self.selected_items:
+            await interaction.response.send_message("No items selected!", ephemeral=True)
+            return
+        
+        for item in self.selected_items:
+            item_data = {
+                'id': item.get('item_id', item.get('id', item['name'])),
+                'name': item['name'],
+                'rarity': item.get('rarity', 'Common'),
+                'value': item.get('value', 0),
+                'icon_url': item.get('icon_url', ''),
+                'quantity': 1
+            }
+            
+            if self.side == "offering":
+                self.parent_view.offering_items.append(item_data)
+            else:
+                self.parent_view.requesting_items.append(item_data)
+        
+        self.parent_view._build_main_view()
+        
+        await interaction.response.send_message(
+            f"✅ Added {len(self.selected_items)} item(s) to your {self.side}!",
+            ephemeral=True
+        )
+        self.stop()
+    
+    async def _close(self, interaction: discord.Interaction):
+        if interaction.user.id != self.user_id:
+            return await interaction.response.defer()
+        
+        await interaction.response.defer()
+        self.stop()
+
+
+class ManageItemsView(View):
+    def __init__(self, user_id: int, items: List[Dict], side: str, parent_view: TradeBuilderView):
+        super().__init__(timeout=180)
+        self.user_id = user_id
+        self.items = items
+        self.side = side
+        self.parent_view = parent_view
+        
+        self._build_view()
+    
+    def _build_view(self):
+        self.clear_items()
+        
+        if self.items:
+            options = []
+            for i, item in enumerate(self.items[:25]):
+                emoji = RARITY_EMOJIS.get(item.get('rarity', 'Common'), '⚪')
+                value = item.get('value', 0)
+                qty = item.get('quantity', 1)
+                desc = f"Qty: {qty}"
+                if value > 0:
+                    desc += f" • Value: {format_value(value * qty)}"
+                
+                options.append(discord.SelectOption(
+                    label=item['name'][:100],
+                    value=str(i),
+                    description=desc[:100],
+                    emoji=emoji
+                ))
+            
+            select = Select(
+                placeholder="Select items to remove...",
+                options=options,
+                min_values=0,
+                max_values=len(options),
+                row=0
+            )
+            select.callback = self._on_select
+            self.add_item(select)
+        
+        clear_btn = Button(label="Clear All", style=discord.ButtonStyle.danger, emoji="🗑️", row=1)
+        clear_btn.callback = self._clear_all
+        self.add_item(clear_btn)
+        
+        close_btn = Button(label="Done", style=discord.ButtonStyle.success, emoji="✅", row=1)
+        close_btn.callback = self._close
+        self.add_item(close_btn)
+    
+    def get_embed(self) -> discord.Embed:
+        side_text = "Offering" if self.side == "offering" else "Requesting"
+        
+        embed = discord.Embed(
+            title=f"📋 Manage {side_text} Items",
+            description="Select items to remove from your trade.",
+            color=0x3498DB
+        )
+        
+        items_text = []
+        total_value = 0
+        
+        for i, item in enumerate(self.items[:15], 1):
+            emoji = RARITY_EMOJIS.get(item.get('rarity', 'Common'), '⚪')
+            value = item.get('value', 0)
+            qty = item.get('quantity', 1)
+            total_value += value * qty
+            
+            line = f"{i}. {emoji} **{item['name']}**"
+            if qty > 1:
+                line += f" x{qty}"
+            if value > 0:
+                line += f" • {format_value(value * qty)}"
+            items_text.append(line)
+        
+        if len(self.items) > 15:
+            items_text.append(f"*...and {len(self.items) - 15} more items*")
+        
+        embed.add_field(name="Items", value="\n".join(items_text) or "No items", inline=False)
+        embed.add_field(name="Total Value", value=format_value(total_value), inline=True)
+        embed.add_field(name="Item Count", value=str(len(self.items)), inline=True)
+        
+        return embed
+    
+    async def _on_select(self, interaction: discord.Interaction):
+        if interaction.user.id != self.user_id:
+            return await interaction.response.defer()
+        
+        indices = [int(v) for v in interaction.data.get('values', [])]
+        indices.sort(reverse=True)
+        
+        removed_names = []
+        for idx in indices:
+            if 0 <= idx < len(self.items):
+                removed_names.append(self.items[idx]['name'])
+                self.items.pop(idx)
+        
+        if self.side == "offering":
+            self.parent_view.offering_items = self.items
+        else:
+            self.parent_view.requesting_items = self.items
+        
+        self.parent_view._build_main_view()
+        
+        if removed_names:
+            await interaction.response.send_message(
+                f"🗑️ Removed: {', '.join(removed_names[:5])}" + (f" +{len(removed_names)-5} more" if len(removed_names) > 5 else ""),
+                ephemeral=True
+            )
+        else:
+            await interaction.response.defer()
+        
+        if self.items:
+            self._build_view()
+        else:
+            self.stop()
+    
+    async def _clear_all(self, interaction: discord.Interaction):
+        if interaction.user.id != self.user_id:
+            return await interaction.response.defer()
+        
+        count = len(self.items)
+        self.items.clear()
+        
+        if self.side == "offering":
+            self.parent_view.offering_items = []
+        else:
+            self.parent_view.requesting_items = []
+        
+        self.parent_view._build_main_view()
+        
+        await interaction.response.send_message(f"🗑️ Cleared {count} items!", ephemeral=True)
+        self.stop()
+    
+    async def _close(self, interaction: discord.Interaction):
+        if interaction.user.id != self.user_id:
+            return await interaction.response.defer()
+        
+        await interaction.response.defer()
+        self.stop()
+
+
+class QuickAddModal(Modal):
+    def __init__(self, game: str, side: str):
+        super().__init__(title=f"Quick Add Item")
+        self.game = game
+        self.side = side
         self.selected_item: Optional[Dict] = None
         
         self.item_name = TextInput(
             label="Item Name",
-            placeholder="Enter item name (e.g., Huge Hacked Cat, Titanic Corgi)",
+            placeholder="e.g., Huge Hacked Cat, Titanic Corgi, Rainbow Dragon",
             style=discord.TextStyle.short,
             required=True,
             max_length=100
@@ -384,7 +828,7 @@ class ItemSearchModal(Modal):
         self.add_item(self.item_name)
         
         self.quantity = TextInput(
-            label="Quantity (optional)",
+            label="Quantity",
             placeholder="1",
             style=discord.TextStyle.short,
             required=False,
@@ -408,23 +852,31 @@ class ItemSearchModal(Modal):
         
         if resolved:
             self.selected_item = {
-                'id': resolved.get('id', item_name),
+                'id': resolved.get('item_id', resolved.get('id', item_name)),
                 'name': resolved.get('name', item_name),
                 'rarity': resolved.get('rarity', 'Common'),
                 'value': resolved.get('value', 0),
                 'icon_url': resolved.get('icon_url', ''),
                 'quantity': qty
             }
+            
+            emoji = RARITY_EMOJIS.get(resolved.get('rarity', 'Common'), '⚪')
+            value = resolved.get('value', 0)
+            value_text = f" • Value: {format_value(value)}" if value > 0 else ""
+            
             await interaction.response.send_message(
-                f"✅ Added **{resolved['name']}** x{qty} to your {self.trade_side}!",
+                f"✅ Added {emoji} **{resolved['name']}** x{qty}{value_text}",
                 ephemeral=True
             )
         else:
             suggestions = await item_resolver.suggest_items(self.game, item_name, limit=5)
             if suggestions:
-                suggestion_text = "\n".join([f"• {s['name']}" for s in suggestions])
+                suggestion_text = "\n".join([
+                    f"{RARITY_EMOJIS.get(s.get('rarity', 'Common'), '⚪')} {s['name']}"
+                    for s in suggestions
+                ])
                 await interaction.response.send_message(
-                    f"❌ Item '{item_name}' not found. Did you mean:\n{suggestion_text}",
+                    f"❌ **'{item_name}'** not found. Did you mean:\n{suggestion_text}\n\n*Try again with the exact name!*",
                     ephemeral=True
                 )
             else:
@@ -437,20 +889,21 @@ class ItemSearchModal(Modal):
                     'quantity': qty
                 }
                 await interaction.response.send_message(
-                    f"⚠️ Item '{item_name}' not in database. Added as custom item.",
+                    f"⚠️ **'{item_name}'** not in database. Added as custom item.",
                     ephemeral=True
                 )
 
 
 class GemInputModal(Modal):
-    def __init__(self, trade_side: str, current_value: int = 0):
-        super().__init__(title=f"Set {trade_side.title()} Diamonds")
-        self.trade_side = trade_side
+    def __init__(self, side: str, current_value: int = 0):
+        side_text = "Offer" if side == "offering" else "Request"
+        super().__init__(title=f"💎 {side_text} Diamonds")
+        self.side = side
         self.gem_amount: Optional[int] = None
         
         self.gems = TextInput(
             label="Diamond Amount",
-            placeholder="Enter amount (e.g., 500M, 1.5B, 2T)",
+            placeholder="Enter amount: 500M, 1.5B, 2T, etc.",
             style=discord.TextStyle.short,
             required=True,
             max_length=20,
@@ -462,25 +915,26 @@ class GemInputModal(Modal):
         self.gem_amount = parse_gem_value(self.gems.value)
         
         if self.gem_amount > 0:
+            side_text = "offering" if self.side == "offering" else "requesting"
             await interaction.response.send_message(
-                f"💎 Set {self.trade_side} diamonds to **{format_value(self.gem_amount)}**",
+                f"💎 Now {side_text} **{format_value(self.gem_amount)} Diamonds**!",
                 ephemeral=True
             )
         else:
             await interaction.response.send_message(
-                f"💎 Cleared {self.trade_side} diamonds",
+                "💎 Cleared diamonds from trade.",
                 ephemeral=True
             )
 
 
 class NotesModal(Modal):
     def __init__(self, current_notes: str = ""):
-        super().__init__(title="Trade Notes")
+        super().__init__(title="📝 Trade Notes")
         self.notes_value: Optional[str] = None
         
         self.notes = TextInput(
-            label="Notes",
-            placeholder="Add any notes about this trade...",
+            label="Notes (visible to trade partner)",
+            placeholder="Add any details about your trade...\ne.g., 'Willing to add if needed' or 'Firm on this offer'",
             style=discord.TextStyle.paragraph,
             required=False,
             max_length=500,
@@ -490,7 +944,132 @@ class NotesModal(Modal):
     
     async def on_submit(self, interaction: discord.Interaction):
         self.notes_value = self.notes.value.strip() if self.notes.value else ""
-        await interaction.response.send_message("📝 Notes updated!", ephemeral=True)
+        if self.notes_value:
+            await interaction.response.send_message("📝 Notes saved!", ephemeral=True)
+        else:
+            await interaction.response.send_message("📝 Notes cleared!", ephemeral=True)
+
+
+class SearchModal(Modal):
+    def __init__(self):
+        super().__init__(title="🔍 Search Items")
+        self.query: Optional[str] = None
+        
+        self.search = TextInput(
+            label="Search Query",
+            placeholder="Enter item name to search...",
+            style=discord.TextStyle.short,
+            required=False,
+            max_length=100
+        )
+        self.add_item(self.search)
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        self.query = self.search.value.strip() if self.search.value else ""
+        await interaction.response.defer()
+
+
+def create_trade_preview_embed(trade_data: Dict, requester: discord.User) -> discord.Embed:
+    game = trade_data.get('game', 'unknown')
+    theme = GAME_THEMES.get(game, {'color': 0x7289DA, 'emoji': '📦', 'name': game.upper()})
+    
+    embed = discord.Embed(
+        title=f"{theme['emoji']} Trade Offer",
+        color=theme['color']
+    )
+    embed.set_author(name=f"From: {requester.display_name}", icon_url=requester.display_avatar.url)
+    
+    offering_items = trade_data.get('offering_items', [])
+    offering_gems = trade_data.get('offering_gems', 0)
+    
+    offering_lines = []
+    total_offering = 0
+    first_icon = None
+    
+    for item in offering_items:
+        emoji = RARITY_EMOJIS.get(item.get('rarity', 'Common'), '⚪')
+        value = item.get('value', 0)
+        qty = item.get('quantity', 1)
+        total_offering += value * qty
+        
+        line = f"{emoji} **{item['name']}**"
+        if qty > 1:
+            line += f" x{qty}"
+        if value > 0:
+            line += f" ({format_value(value)})"
+        offering_lines.append(line)
+        
+        if not first_icon and item.get('icon_url'):
+            first_icon = item['icon_url']
+    
+    if offering_gems > 0:
+        offering_lines.append(f"💎 **{format_value(offering_gems)} Diamonds**")
+        total_offering += offering_gems
+    
+    if offering_lines:
+        offer_text = "\n".join(offering_lines[:10])
+        if len(offering_lines) > 10:
+            offer_text += f"\n*+{len(offering_lines)-10} more...*"
+        embed.add_field(name="📦 Offering", value=offer_text, inline=True)
+    else:
+        embed.add_field(name="📦 Offering", value="*Nothing*", inline=True)
+    
+    requesting_items = trade_data.get('requesting_items', [])
+    requesting_gems = trade_data.get('requesting_gems', 0)
+    
+    requesting_lines = []
+    total_requesting = 0
+    
+    for item in requesting_items:
+        emoji = RARITY_EMOJIS.get(item.get('rarity', 'Common'), '⚪')
+        value = item.get('value', 0)
+        qty = item.get('quantity', 1)
+        total_requesting += value * qty
+        
+        line = f"{emoji} **{item['name']}**"
+        if qty > 1:
+            line += f" x{qty}"
+        if value > 0:
+            line += f" ({format_value(value)})"
+        requesting_lines.append(line)
+    
+    if requesting_gems > 0:
+        requesting_lines.append(f"💎 **{format_value(requesting_gems)} Diamonds**")
+        total_requesting += requesting_gems
+    
+    if requesting_lines:
+        request_text = "\n".join(requesting_lines[:10])
+        if len(requesting_lines) > 10:
+            request_text += f"\n*+{len(requesting_lines)-10} more...*"
+        embed.add_field(name="🎯 Requesting", value=request_text, inline=True)
+    else:
+        embed.add_field(name="🎯 Requesting", value="*Open to offers*", inline=True)
+    
+    if total_offering > 0 or total_requesting > 0:
+        value_diff = total_offering - total_requesting
+        analysis = f"Offer: {format_value(total_offering)}\n"
+        if total_requesting > 0:
+            analysis += f"Want: {format_value(total_requesting)}\n"
+            if value_diff > 0:
+                analysis += f"📈 Overpay: {format_value(abs(value_diff))}"
+            elif value_diff < 0:
+                analysis += f"📉 Underpay: {format_value(abs(value_diff))}"
+            else:
+                analysis += "⚖️ Fair trade"
+        embed.add_field(name="💰 Value", value=analysis, inline=True)
+    
+    notes = trade_data.get('notes', '')
+    if notes:
+        embed.add_field(name="📝 Notes", value=notes[:200], inline=False)
+    
+    embed.add_field(name="🎮 Game", value=theme['name'], inline=True)
+    
+    if first_icon:
+        embed.set_thumbnail(url=first_icon)
+    
+    embed.set_footer(text="Click buttons below to respond!")
+    
+    return embed
 
 
 class ItemSelectorView(View):
@@ -578,137 +1157,4 @@ class ItemSelectorView(View):
         if interaction.user.id != self.user_id:
             return
         self.stop()
-        await interaction.response.defer()
-
-
-def create_trade_preview_embed(trade_data: Dict, requester: discord.User) -> discord.Embed:
-    from ui.embeds import GAME_NAMES, GAME_COLORS
-    
-    game = trade_data.get('game', 'unknown')
-    color = GAME_COLORS.get(game, 0x7289DA)
-    
-    embed = discord.Embed(
-        title=f"📋 Trade Preview - {GAME_NAMES.get(game, game.upper())}",
-        color=color
-    )
-    embed.set_author(name=f"From: {requester.display_name}", icon_url=requester.display_avatar.url)
-    
-    offering_items = trade_data.get('offering_items', [])
-    offering_gems = trade_data.get('offering_gems', 0)
-    
-    offering_lines = []
-    total_offering = 0
-    first_icon = None
-    
-    for item in offering_items:
-        emoji = RARITY_EMOJIS.get(item.get('rarity', 'Common'), '⚪')
-        value = item.get('value', 0)
-        qty = item.get('quantity', 1)
-        total_offering += value * qty
-        
-        line = f"{emoji} **{item['name']}**"
-        if qty > 1:
-            line += f" x{qty}"
-        if value > 0:
-            line += f" ({format_value(value)})"
-        offering_lines.append(line)
-        
-        if not first_icon and item.get('icon_url'):
-            first_icon = item['icon_url']
-    
-    if offering_gems > 0:
-        offering_lines.append(f"💎 **{format_value(offering_gems)} Diamonds**")
-        total_offering += offering_gems
-    
-    if offering_lines:
-        embed.add_field(
-            name=f"📦 Offering",
-            value="\n".join(offering_lines[:15]),
-            inline=True
-        )
-    else:
-        embed.add_field(name="📦 Offering", value="*Nothing*", inline=True)
-    
-    requesting_items = trade_data.get('requesting_items', [])
-    requesting_gems = trade_data.get('requesting_gems', 0)
-    
-    requesting_lines = []
-    total_requesting = 0
-    
-    for item in requesting_items:
-        emoji = RARITY_EMOJIS.get(item.get('rarity', 'Common'), '⚪')
-        value = item.get('value', 0)
-        qty = item.get('quantity', 1)
-        total_requesting += value * qty
-        
-        line = f"{emoji} **{item['name']}**"
-        if qty > 1:
-            line += f" x{qty}"
-        if value > 0:
-            line += f" ({format_value(value)})"
-        requesting_lines.append(line)
-    
-    if requesting_gems > 0:
-        requesting_lines.append(f"💎 **{format_value(requesting_gems)} Diamonds**")
-        total_requesting += requesting_gems
-    
-    if requesting_lines:
-        embed.add_field(
-            name=f"🎯 Requesting",
-            value="\n".join(requesting_lines[:15]),
-            inline=True
-        )
-    else:
-        embed.add_field(name="🎯 Requesting", value="*Open to offers*", inline=True)
-    
-    if first_icon:
-        embed.set_thumbnail(url=first_icon)
-    
-    value_diff = total_offering - total_requesting
-    analysis = f"📦 {format_value(total_offering)} vs 🎯 {format_value(total_requesting)}\n"
-    if value_diff > 0:
-        analysis += f"📈 **+{format_value(abs(value_diff))}** overpay"
-    elif value_diff < 0:
-        analysis += f"📉 **-{format_value(abs(value_diff))}** underpay"
-    else:
-        analysis += "⚖️ **Fair trade!**"
-    
-    embed.add_field(name="💰 Value Analysis", value=analysis, inline=False)
-    
-    notes = trade_data.get('notes', '')
-    if notes:
-        embed.add_field(name="📝 Notes", value=notes[:200], inline=False)
-    
-    return embed
-
-
-class QuickItemSelectView(View):
-    def __init__(self, user_id: int, game: str, category: str = "all"):
-        super().__init__(timeout=180)
-        self.user_id = user_id
-        self.game = game
-        self.category = category
-        self.selected_items: List[Dict] = []
-        
-        categories = [
-            discord.SelectOption(label="All Items", value="all", emoji="📦"),
-            discord.SelectOption(label="Huge Pets", value="huge", emoji="💫"),
-            discord.SelectOption(label="Titanic Pets", value="titanic", emoji="⭐"),
-            discord.SelectOption(label="Mythic Pets", value="mythic", emoji="🔴"),
-            discord.SelectOption(label="Legendary Pets", value="legendary", emoji="🟡"),
-            discord.SelectOption(label="Exclusive/Event", value="exclusive", emoji="🎭"),
-        ]
-        
-        cat_select = Select(
-            placeholder="Filter by category...",
-            options=categories,
-            row=0
-        )
-        cat_select.callback = self._on_category_change
-        self.add_item(cat_select)
-    
-    async def _on_category_change(self, interaction: discord.Interaction):
-        if interaction.user.id != self.user_id:
-            return
-        self.category = interaction.data['values'][0]
         await interaction.response.defer()

@@ -233,6 +233,43 @@ class SettingsCog(commands.Cog):
             ephemeral=True
         )
     
+    @settings_group.command(name="tradefeed", description="Set channel for completed trade announcements")
+    @app_commands.describe(channel="The channel for trade feed (leave empty to disable)")
+    @app_commands.default_permissions(manage_guild=True)
+    async def set_trade_feed(self, interaction: discord.Interaction, channel: Optional[discord.TextChannel] = None):
+        if not interaction.guild:
+            await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
+            return
+        
+        if channel:
+            permissions = channel.permissions_for(interaction.guild.me)
+            if not permissions.send_messages or not permissions.embed_links:
+                await interaction.response.send_message(
+                    f"I need **Send Messages** and **Embed Links** permissions in {channel.mention}!",
+                    ephemeral=True
+                )
+                return
+            
+            await set_guild_settings(interaction.guild.id, trade_feed_channel_id=channel.id, trade_feed_enabled=1)
+            
+            embed = discord.Embed(
+                title="📢 Trade Feed Configured!",
+                color=0x2ECC71,
+                description=f"Completed trades will now be announced in {channel.mention}"
+            )
+            embed.add_field(
+                name="What gets posted?",
+                value="• Completed trades with items traded\n"
+                      "• Trade values and trader info\n"
+                      "• Item images when available",
+                inline=False
+            )
+            embed.set_footer(text="Use /settings toggle to enable/disable the feed")
+            await interaction.response.send_message(embed=embed)
+        else:
+            await set_guild_settings(interaction.guild.id, trade_feed_channel_id=None, trade_feed_enabled=0)
+            await interaction.response.send_message("Trade feed disabled.", ephemeral=True)
+    
     @settings_group.command(name="mintrust", description="Set minimum trust score to create trades")
     @app_commands.describe(score="Minimum trust score (0-100, 0 to disable)")
     @app_commands.default_permissions(manage_guild=True)
