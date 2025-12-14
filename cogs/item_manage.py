@@ -45,10 +45,21 @@ RARITY_CHOICES = [
 ]
 
 
-def is_owner():
+def is_owner_or_admin():
+    """Check if user is bot owner OR has administrator permission in the server."""
     async def predicate(interaction: discord.Interaction) -> bool:
         if hasattr(interaction.client, 'is_owner'):
-            return await interaction.client.is_owner(interaction.user)  # type: ignore
+            if await interaction.client.is_owner(interaction.user):
+                return True
+        
+        if interaction.guild and isinstance(interaction.user, discord.Member):
+            if interaction.user.guild_permissions.administrator:
+                return True
+        
+        await interaction.response.send_message(
+            "You need Administrator permission to use this command.",
+            ephemeral=True
+        )
         return False
     return app_commands.check(predicate)
 
@@ -114,7 +125,7 @@ class ItemManageCog(commands.Cog):
             return []
 
     @item_group.command(name="add", description="Add a new item to the database")
-    @is_owner()
+    @is_owner_or_admin()
     @app_commands.describe(
         game="The game this item belongs to",
         item_id="Unique identifier for the item",
@@ -191,7 +202,7 @@ class ItemManageCog(commands.Cog):
             await interaction.followup.send(f"Error adding item: {str(e)}", ephemeral=True)
 
     @item_group.command(name="update", description="Update an existing item's details")
-    @is_owner()
+    @is_owner_or_admin()
     @app_commands.describe(
         game="The game this item belongs to",
         item_id="The item to update",
@@ -283,7 +294,7 @@ class ItemManageCog(commands.Cog):
             await interaction.followup.send(f"Error updating item: {str(e)}", ephemeral=True)
 
     @item_group.command(name="setimage", description="Set or update an item's image")
-    @is_owner()
+    @is_owner_or_admin()
     @app_commands.describe(
         game="The game this item belongs to",
         item_id="The item to update",
@@ -348,7 +359,7 @@ class ItemManageCog(commands.Cog):
             await interaction.followup.send(f"Error setting image: {str(e)}", ephemeral=True)
 
     @item_group.command(name="setvalue", description="Quickly set an item's value")
-    @is_owner()
+    @is_owner_or_admin()
     @app_commands.describe(
         game="The game this item belongs to",
         item_id="The item to update",
@@ -400,7 +411,7 @@ class ItemManageCog(commands.Cog):
             await interaction.followup.send(f"Error setting value: {str(e)}", ephemeral=True)
 
     @item_group.command(name="delete", description="Delete an item from the database")
-    @is_owner()
+    @is_owner_or_admin()
     @app_commands.describe(
         game="The game this item belongs to",
         item_id="The item to delete"
@@ -440,7 +451,7 @@ class ItemManageCog(commands.Cog):
             await interaction.followup.send(f"Error deleting item: {str(e)}", ephemeral=True)
 
     @item_group.command(name="list", description="List all items for a game")
-    @is_owner()
+    @is_owner_or_admin()
     @app_commands.describe(
         game="The game to list items for",
         page="Page number (25 items per page)"
@@ -502,7 +513,7 @@ class ItemManageCog(commands.Cog):
             await interaction.followup.send(f"Error listing items: {str(e)}", ephemeral=True)
 
     @item_group.command(name="bulkvalue", description="Update values for multiple items")
-    @is_owner()
+    @is_owner_or_admin()
     @app_commands.describe(
         game="The game these items belong to",
         updates="JSON format: {\"item_id\": value, \"item_id2\": value2}"
