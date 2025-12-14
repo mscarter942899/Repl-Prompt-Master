@@ -30,6 +30,7 @@ class RobloxTradingBot(commands.Bot):
         )
         self.initial_extensions = [
             'cogs.trading',
+            'cogs.enhanced_trading',
             'cogs.inventory',
             'cogs.profile',
             'cogs.search',
