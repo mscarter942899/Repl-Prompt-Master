@@ -181,8 +181,8 @@ class TradingCog(commands.Cog):
                     embed=trade_embed
                 )
     
-    def _create_enhanced_trade_embed(self, trade: dict, requester: discord.User, 
-                                      target: Optional[discord.User] = None) -> discord.Embed:
+    def _create_enhanced_trade_embed(self, trade: dict, requester, 
+                                      target = None) -> discord.Embed:
         game = trade.get('game', 'unknown')
         color = GAME_COLORS.get(game, 0x7289DA)
         
@@ -273,7 +273,7 @@ class TradingCog(commands.Cog):
         
         return embed
     
-    def _create_announcement_embed(self, trade: dict, user: discord.User, 
+    def _create_announcement_embed(self, trade: dict, user, 
                                     game: str, offering_gems: int) -> discord.Embed:
         embed = discord.Embed(
             title="🔔 New Trade Available!",

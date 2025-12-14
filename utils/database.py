@@ -278,12 +278,12 @@ async def get_trade(trade_id: int) -> Optional[Dict]:
             row = await cursor.fetchone()
             return dict(row) if row else None
 
-async def create_trade(requester_id: int, game: str, requester_items: str) -> Optional[int]:
+async def create_trade(requester_id: int, game: str, requester_items: str, target_items: Optional[str] = None) -> Optional[int]:
     async with aiosqlite.connect(DATABASE_PATH) as db:
         cursor = await db.execute('''
-            INSERT INTO trades (requester_id, game, requester_items, status)
-            VALUES (?, ?, ?, 'draft')
-        ''', (requester_id, game, requester_items))
+            INSERT INTO trades (requester_id, game, requester_items, target_items, status)
+            VALUES (?, ?, ?, ?, 'draft')
+        ''', (requester_id, game, requester_items, target_items))
         await db.commit()
         return cursor.lastrowid
 
