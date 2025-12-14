@@ -122,6 +122,15 @@ Items stored in the database have the following fields:
 - Handoff buttons: "I traded in-game", "Something went wrong", "Upload Proof"
 
 ## Recent Changes
+- **Dec 2024**: Added trade announcement channel and enhanced buttons
+  - New `/settings tradechannel` command for admins to set where trades are announced
+  - Trade buttons now include: Accept, Decline, Counter, Negotiate, View Details, View Profile, Message, Share, Bookmark, Report, Help
+  - Handoff phase buttons: Complete Trade, Report Issue, Upload Proof, Cancel, Trading Tips
+  - Announcement buttons: I'm Interested!, View Items, Trader Profile, Share
+  - Added `/settings` command group with: tradechannel, logchannel, modrole, toggle, mintrust, view
+  - Trades created without a target are announced to the configured channel
+  - All buttons work with trade-specific data embedded in custom_ids
+  
 - **Dec 2024**: Converted from scraper-based to fully manual item management
   - Removed dependency on external websites for item data
   - Added `/manage` command group for item CRUD operations
