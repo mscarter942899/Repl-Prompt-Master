@@ -9,10 +9,12 @@ class PS99Adapter(GameAPIAdapter):
     def __init__(self):
         super().__init__('ps99')
         self.base_url = 'https://biggamesapi.io/api'
+        self.rap_url = 'https://biggamesapi.io/api/rap'
         self.default_values_url = 'https://petsimulatorvalues.com/values.php?category=all'
         self.values_url = self.default_values_url
         self.fallback_path = 'data/fallback_ps99.json'
         self._items_data: List[Dict] = []
+        self._rap_data: Dict[str, float] = {}
         self.rarity_list = ['Titanic', 'Huge', 'Legendary', 'Epic', 'Rare', 'Uncommon', 'Common']
         
     async def _get_current_url(self) -> str:
@@ -24,6 +26,40 @@ class PS99Adapter(GameAPIAdapter):
         except:
             pass
         return self.values_url or self.default_values_url
+    
+    async def _fetch_rap_data(self) -> Dict[str, float]:
+        cached = self._get_cached('rap_data')
+        if cached:
+            return cached
+        
+        rap_dict = {}
+        try:
+            data = await self._request(self.rap_url)
+            if data and 'data' in data:
+                for item in data['data']:
+                    config = item.get('configData', {})
+                    pet_id = config.get('id', str(item.get('_id', '')))
+                    rap_value = item.get('value', 0)
+                    if pet_id and rap_value:
+                        rap_dict[pet_id.lower()] = float(rap_value)
+                        variants = []
+                        if config.get('pt'):
+                            variants.append(('pt', config.get('pt')))
+                        if config.get('sh'):
+                            variants.append(('sh', config.get('sh')))
+                        key_base = pet_id.lower()
+                        for var_type, var_val in variants:
+                            if var_val:
+                                variant_key = f"{key_base}_{var_type}"
+                                rap_dict[variant_key] = float(rap_value)
+                
+                self._set_cached('rap_data', rap_dict)
+                self._rap_data = rap_dict
+                print(f"PS99: Fetched RAP data for {len(rap_dict)} items")
+        except Exception as e:
+            print(f"Error fetching PS99 RAP data: {e}")
+        
+        return rap_dict
     
     async def _fetch_from_values_site(self) -> List[Dict]:
         cached = self._get_cached('items_from_site')
@@ -116,13 +152,29 @@ class PS99Adapter(GameAPIAdapter):
         if cached:
             return cached
         
-        items = await self._fetch_from_values_site()
+        rap_data = await self._fetch_rap_data()
+        
+        items = await self._fetch_from_biggames_api()
         
         if not items:
-            items = await self._fetch_from_biggames_api()
+            items = await self._fetch_from_values_site()
         
         if not items:
             items = self._load_fallback()
+        
+        if items and rap_data:
+            for item in items:
+                item_id = item.get('id', '').lower()
+                item_name = self._normalize_name(item.get('name', ''))
+                
+                rap_value = rap_data.get(item_id) or rap_data.get(item_name, 0)
+                
+                if 'metadata' not in item:
+                    item['metadata'] = {}
+                item['metadata']['rap'] = rap_value
+                
+                if not item.get('value') and rap_value:
+                    item['value'] = rap_value
         
         if items:
             self._set_cached('items', items)

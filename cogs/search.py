@@ -108,19 +108,50 @@ class SearchCog(commands.Cog):
         
         embed.add_field(name="Game", value=GAME_NAMES.get(game, game.upper()), inline=True)
         embed.add_field(name="Rarity", value=item.get('rarity', 'Unknown'), inline=True)
-        embed.add_field(name="Value", value=f"{item.get('value', 0):,.0f}", inline=True)
+        
+        value = item.get('value', 0)
+        if value >= 1_000_000_000_000:
+            value_str = f"{value/1_000_000_000_000:.2f}T"
+        elif value >= 1_000_000_000:
+            value_str = f"{value/1_000_000_000:.2f}B"
+        elif value >= 1_000_000:
+            value_str = f"{value/1_000_000:.2f}M"
+        elif value >= 1_000:
+            value_str = f"{value/1_000:.2f}K"
+        else:
+            value_str = f"{value:,.0f}"
+        embed.add_field(name="Value", value=value_str, inline=True)
+        
+        metadata = item.get('metadata', {})
+        rap = metadata.get('rap', 0)
+        if rap and game == 'ps99':
+            if rap >= 1_000_000_000_000:
+                rap_str = f"{rap/1_000_000_000_000:.2f}T"
+            elif rap >= 1_000_000_000:
+                rap_str = f"{rap/1_000_000_000:.2f}B"
+            elif rap >= 1_000_000:
+                rap_str = f"{rap/1_000_000:.2f}M"
+            elif rap >= 1_000:
+                rap_str = f"{rap/1_000:.2f}K"
+            else:
+                rap_str = f"{rap:,.0f}"
+            embed.add_field(name="RAP", value=rap_str, inline=True)
+        
         embed.add_field(name="Tradeable", value="Yes" if item.get('tradeable', True) else "No", inline=True)
         embed.add_field(name="Item ID", value=item.get('id', 'N/A'), inline=True)
         
-        metadata = item.get('metadata', {})
         if metadata:
             meta_text = []
-            for key, value in metadata.items():
-                if value and value != False:
-                    if isinstance(value, bool):
+            for key, val in metadata.items():
+                if key == 'rap':
+                    continue
+                if val and val != False:
+                    if isinstance(val, bool):
                         meta_text.append(key.replace('_', ' ').title())
-                    else:
-                        meta_text.append(f"{key.replace('_', ' ').title()}: {value}")
+                    elif isinstance(val, (int, float)) and val > 0:
+                        meta_text.append(f"{key.replace('_', ' ').title()}: {val:,.0f}")
+                    elif isinstance(val, str):
+                        meta_text.append(f"{key.replace('_', ' ').title()}: {val}")
             if meta_text:
                 embed.add_field(name="Properties", value="\n".join(meta_text), inline=False)
         
