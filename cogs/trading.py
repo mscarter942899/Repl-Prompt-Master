@@ -288,36 +288,78 @@ class TradingCog(commands.Cog):
         embed.add_field(name="📋 Trade ID", value=f"**#{trade['id']}**", inline=True)
         embed.add_field(name=f"{game_emoji} Game", value=f"**{GAME_NAMES.get(game, game)}**", inline=True)
         
-        items = json.loads(trade.get('requester_items', '[]') or '[]')
-        total_value = 0
+        offering_items = json.loads(trade.get('requester_items', '[]') or '[]')
+        requesting_items = json.loads(trade.get('target_items', '[]') or '[]')
+        requesting_gems = trade.get('requesting_gems', 0) or 0
         
-        if items:
-            items_preview = []
-            for item in items[:6]:
-                emoji = RARITY_EMOJIS.get(item.get('rarity', 'Common'), '⚪')
-                value = item.get('value', 0)
-                total_value += value
-                line = f"{emoji} **{item['name']}**"
-                if value > 0:
-                    line += f" `{format_value(value)}`"
-                items_preview.append(line)
-            if len(items) > 6:
-                items_preview.append(f"*+{len(items) - 6} more items*")
-            embed.add_field(name="🎁 Items Offered", value="\n".join(items_preview), inline=False)
+        total_offering = 0
+        total_requesting = 0
+        first_item_icon = None
+        
+        offering_lines = []
+        for item in offering_items[:6]:
+            emoji = RARITY_EMOJIS.get(item.get('rarity', 'Common'), '⚪')
+            value = item.get('value', 0)
+            qty = item.get('quantity', 1)
+            total_offering += value * qty
+            line = f"{emoji} **{item['name']}**"
+            if qty > 1:
+                line += f" x{qty}"
+            if value > 0:
+                line += f" `{format_value(value)}`"
+            offering_lines.append(line)
+            if not first_item_icon and item.get('icon_url'):
+                first_item_icon = item['icon_url']
+        
+        if len(offering_items) > 6:
+            offering_lines.append(f"*+{len(offering_items) - 6} more items*")
         
         if offering_gems > 0:
-            embed.add_field(name=f"{DIAMONDS_EMOJI} Diamonds", value=f"**{format_value(offering_gems)}**", inline=True)
-            total_value += offering_gems
+            offering_lines.append(f"{DIAMONDS_EMOJI} **{format_value(offering_gems)} Diamonds**")
+            total_offering += offering_gems
         
-        if total_value > 0:
-            embed.add_field(name="💰 Total Value", value=f"**{format_value(total_value)}**", inline=True)
+        if offering_lines:
+            embed.add_field(name="🎁 Offering", value="\n".join(offering_lines), inline=True)
+        else:
+            embed.add_field(name="🎁 Offering", value="*Nothing specified*", inline=True)
         
-        first_item_icon = None
-        if items:
-            for item in items:
-                if item.get('icon_url'):
-                    first_item_icon = item['icon_url']
-                    break
+        requesting_lines = []
+        for item in requesting_items[:6]:
+            emoji = RARITY_EMOJIS.get(item.get('rarity', 'Common'), '⚪')
+            value = item.get('value', 0)
+            qty = item.get('quantity', 1)
+            total_requesting += value * qty
+            line = f"{emoji} **{item['name']}**"
+            if qty > 1:
+                line += f" x{qty}"
+            if value > 0:
+                line += f" `{format_value(value)}`"
+            requesting_lines.append(line)
+        
+        if len(requesting_items) > 6:
+            requesting_lines.append(f"*+{len(requesting_items) - 6} more items*")
+        
+        if requesting_gems > 0:
+            requesting_lines.append(f"{DIAMONDS_EMOJI} **{format_value(requesting_gems)} Diamonds**")
+            total_requesting += requesting_gems
+        
+        if requesting_lines:
+            embed.add_field(name="🎯 Looking For", value="\n".join(requesting_lines), inline=True)
+        else:
+            embed.add_field(name="🎯 Looking For", value="*Open to offers!*", inline=True)
+        
+        if total_offering > 0 or total_requesting > 0:
+            value_text = f"**Offer:** {format_value(total_offering)}"
+            if total_requesting > 0:
+                value_text += f"\n**Want:** {format_value(total_requesting)}"
+                diff = total_offering - total_requesting
+                if diff > 0:
+                    value_text += f"\n📈 *Overpay: {format_value(abs(diff))}*"
+                elif diff < 0:
+                    value_text += f"\n📉 *Underpay: {format_value(abs(diff))}*"
+                else:
+                    value_text += f"\n⚖️ *Fair trade*"
+            embed.add_field(name="💰 Value", value=value_text, inline=False)
         
         if first_item_icon:
             embed.set_thumbnail(url=first_item_icon)
