@@ -3,11 +3,17 @@ from discord import app_commands
 from discord.ext import commands
 from typing import Optional, List
 import json
+import logging
 
 from utils.database import (
     upsert_item, get_item, search_items as db_search_items, delete_item, 
     get_all_items_for_game, update_item_field, init_database
 )
+
+logger = logging.getLogger('ItemManage')
+
+ALLOWED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp']
+MAX_IMAGE_SIZE = 8 * 1024 * 1024  # 8MB
 
 GAME_CHOICES = [
     app_commands.Choice(name="Pet Simulator 99", value="ps99"),
@@ -45,6 +51,25 @@ def is_owner():
             return await interaction.client.is_owner(interaction.user)  # type: ignore
         return False
     return app_commands.check(predicate)
+
+
+async def process_image_upload(attachment: discord.Attachment, interaction: discord.Interaction) -> Optional[str]:
+    """
+    Process an uploaded image attachment and return a permanent URL.
+    Uses the original attachment URL which Discord keeps accessible.
+    """
+    if attachment.content_type not in ALLOWED_IMAGE_TYPES:
+        raise ValueError(f"Invalid image type. Allowed: PNG, JPEG, GIF, WebP")
+    
+    if attachment.size > MAX_IMAGE_SIZE:
+        raise ValueError(f"Image too large. Maximum size: 8MB")
+    
+    try:
+        return attachment.url
+        
+    except Exception as e:
+        logger.error(f"Error processing image upload: {e}")
+        raise ValueError(f"Failed to process image: {str(e)}")
 
 
 class ItemManageCog(commands.Cog):
@@ -96,7 +121,8 @@ class ItemManageCog(commands.Cog):
         name="Display name of the item",
         value="The item's value/worth",
         rarity="The item's rarity tier",
-        image_url="URL to the item's image (optional)",
+        image="Upload an image from your device (optional)",
+        image_url="URL to the item's image (optional, use if not uploading)",
         tradeable="Whether this item can be traded"
     )
     @app_commands.choices(game=GAME_CHOICES, rarity=RARITY_CHOICES)
@@ -108,6 +134,7 @@ class ItemManageCog(commands.Cog):
         name: str,
         value: float,
         rarity: Optional[str] = "Common",
+        image: Optional[discord.Attachment] = None,
         image_url: Optional[str] = None,
         tradeable: Optional[bool] = True
     ):
@@ -123,13 +150,23 @@ class ItemManageCog(commands.Cog):
                 )
                 return
 
+            final_image_url = None
+            if image:
+                try:
+                    final_image_url = await process_image_upload(image, interaction)
+                except ValueError as e:
+                    await interaction.followup.send(f"Image error: {str(e)}", ephemeral=True)
+                    return
+            elif image_url:
+                final_image_url = image_url
+
             await upsert_item(
                 game=game,
                 item_id=item_id,
                 name=name,
                 value=value,
                 rarity=rarity,
-                icon_url=image_url,
+                icon_url=final_image_url,
                 tradeable=1 if tradeable else 0,
                 source='manual'
             )
@@ -144,8 +181,9 @@ class ItemManageCog(commands.Cog):
             embed.add_field(name="Rarity", value=rarity, inline=True)
             embed.add_field(name="Tradeable", value="Yes" if tradeable else "No", inline=True)
             
-            if image_url:
-                embed.set_thumbnail(url=image_url)
+            if final_image_url:
+                embed.set_thumbnail(url=final_image_url)
+                embed.add_field(name="Image", value="✅ Uploaded" if image else "✅ URL Set", inline=True)
 
             await interaction.followup.send(embed=embed)
 
@@ -160,6 +198,7 @@ class ItemManageCog(commands.Cog):
         name="New display name (leave empty to keep current)",
         value="New value (leave empty to keep current)",
         rarity="New rarity (leave empty to keep current)",
+        image="Upload a new image from your device (optional)",
         image_url="New image URL (leave empty to keep current)",
         tradeable="Whether this item can be traded"
     )
@@ -173,6 +212,7 @@ class ItemManageCog(commands.Cog):
         name: Optional[str] = None,
         value: Optional[float] = None,
         rarity: Optional[str] = None,
+        image: Optional[discord.Attachment] = None,
         image_url: Optional[str] = None,
         tradeable: Optional[bool] = None
     ):
@@ -188,13 +228,23 @@ class ItemManageCog(commands.Cog):
                 return
 
             updates = {}
+            image_uploaded = False
             if name is not None:
                 updates['name'] = name
             if value is not None:
                 updates['value'] = value
             if rarity is not None:
                 updates['rarity'] = rarity
-            if image_url is not None:
+            if image:
+                try:
+                    uploaded_url = await process_image_upload(image, interaction)
+                    if uploaded_url:
+                        updates['icon_url'] = uploaded_url
+                        image_uploaded = True
+                except ValueError as e:
+                    await interaction.followup.send(f"Image error: {str(e)}", ephemeral=True)
+                    return
+            elif image_url is not None:
                 updates['icon_url'] = image_url
             if tradeable is not None:
                 updates['tradeable'] = 1 if tradeable else 0
@@ -216,7 +266,7 @@ class ItemManageCog(commands.Cog):
                 display_name = field.replace('_', ' ').title()
                 if field == 'icon_url':
                     display_name = 'Image'
-                    val = 'Updated'
+                    val = '📤 Uploaded' if image_uploaded else '🔗 URL Updated'
                 elif field == 'tradeable':
                     val = 'Yes' if val else 'No'
                 elif isinstance(val, float):
@@ -237,7 +287,8 @@ class ItemManageCog(commands.Cog):
     @app_commands.describe(
         game="The game this item belongs to",
         item_id="The item to update",
-        image_url="URL to the item's image"
+        image="Upload an image from your device",
+        image_url="URL to the item's image (use if not uploading)"
     )
     @app_commands.choices(game=GAME_CHOICES)
     @app_commands.autocomplete(item_id=item_autocomplete)
@@ -246,11 +297,19 @@ class ItemManageCog(commands.Cog):
         interaction: discord.Interaction,
         game: str,
         item_id: str,
-        image_url: str
+        image: Optional[discord.Attachment] = None,
+        image_url: Optional[str] = None
     ):
         await interaction.response.defer(ephemeral=True)
 
         try:
+            if not image and not image_url:
+                await interaction.followup.send(
+                    "Please provide either an image upload or an image URL.",
+                    ephemeral=True
+                )
+                return
+
             existing = await get_item(game, item_id)
             if not existing:
                 await interaction.followup.send(
@@ -259,16 +318,29 @@ class ItemManageCog(commands.Cog):
                 )
                 return
 
-            await update_item_field(game, item_id, 'icon_url', image_url)
+            final_image_url = None
+            if image:
+                try:
+                    final_image_url = await process_image_upload(image, interaction)
+                except ValueError as e:
+                    await interaction.followup.send(f"Image error: {str(e)}", ephemeral=True)
+                    return
+            elif image_url:
+                final_image_url = image_url
+
+            if final_image_url:
+                await update_item_field(game, item_id, 'icon_url', final_image_url)
 
             embed = discord.Embed(
                 title="Image Updated",
                 description=f"Set image for **{existing['name']}**",
                 color=0x9B59B6
             )
-            embed.set_thumbnail(url=image_url)
+            if final_image_url:
+                embed.set_thumbnail(url=final_image_url)
             embed.add_field(name="Game", value=GAME_NAMES.get(game, game), inline=True)
             embed.add_field(name="Item ID", value=item_id, inline=True)
+            embed.add_field(name="Source", value="📤 Uploaded" if image else "🔗 URL", inline=True)
 
             await interaction.followup.send(embed=embed)
 
