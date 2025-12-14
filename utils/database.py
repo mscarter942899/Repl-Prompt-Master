@@ -186,6 +186,20 @@ async def init_database():
             )
         ''')
         
+        await db.execute('''
+            CREATE TABLE IF NOT EXISTS guild_settings (
+                guild_id INTEGER PRIMARY KEY,
+                trade_channel_id INTEGER,
+                log_channel_id INTEGER,
+                mod_role_id INTEGER,
+                announcement_enabled INTEGER DEFAULT 1,
+                auto_delete_expired INTEGER DEFAULT 1,
+                require_verification INTEGER DEFAULT 0,
+                min_trust_score REAL DEFAULT 0.0,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
         await db.execute('CREATE INDEX IF NOT EXISTS idx_items_game ON items(game)')
         await db.execute('CREATE INDEX IF NOT EXISTS idx_items_normalized ON items(normalized_name)')
         await db.execute('CREATE INDEX IF NOT EXISTS idx_trades_status ON trades(status)')
@@ -452,3 +466,38 @@ async def update_item_field(game: str, item_id: str, field: str, value: Any) -> 
             )
         await db.commit()
         return cursor.rowcount > 0
+
+
+async def get_guild_settings(guild_id: int) -> Optional[Dict]:
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute('SELECT * FROM guild_settings WHERE guild_id = ?', (guild_id,)) as cursor:
+            row = await cursor.fetchone()
+            return dict(row) if row else None
+
+
+async def set_guild_settings(guild_id: int, **kwargs) -> None:
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        existing = await get_guild_settings(guild_id)
+        if existing:
+            if kwargs:
+                fields = ', '.join(f'{k} = ?' for k in kwargs.keys())
+                values = list(kwargs.values()) + [guild_id]
+                await db.execute(f'UPDATE guild_settings SET {fields}, updated_at = CURRENT_TIMESTAMP WHERE guild_id = ?', values)
+        else:
+            columns = ['guild_id'] + list(kwargs.keys())
+            placeholders = ', '.join(['?'] * len(columns))
+            values = [guild_id] + list(kwargs.values())
+            await db.execute(f'INSERT INTO guild_settings ({", ".join(columns)}) VALUES ({placeholders})', values)
+        await db.commit()
+
+
+async def get_trade_channel(guild_id: int) -> Optional[int]:
+    settings = await get_guild_settings(guild_id)
+    if settings and settings.get('announcement_enabled'):
+        return settings.get('trade_channel_id')
+    return None
+
+
+async def set_trade_channel(guild_id: int, channel_id: Optional[int]) -> None:
+    await set_guild_settings(guild_id, trade_channel_id=channel_id)

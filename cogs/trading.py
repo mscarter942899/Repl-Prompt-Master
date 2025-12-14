@@ -8,14 +8,14 @@ from datetime import datetime, timedelta
 from utils.database import (
     get_user, create_user, update_user, 
     create_trade, update_trade, get_trade, get_user_trades,
-    add_trade_history, log_audit
+    add_trade_history, log_audit, get_trade_channel
 )
 from utils.resolver import item_resolver
 from utils.trust_engine import trust_engine, RiskLevel
 from utils.validators import Validators
 from utils.rate_limit import rate_limiter, action_cooldown
 from ui.embeds import TradeEmbed, GAME_NAMES
-from ui.views import TradeView, HandoffView, ConfirmView, GameSelectView
+from ui.views import TradeView, HandoffView, ConfirmView, GameSelectView, PersistentTradeView, TradeAnnouncementView
 from ui.modals import TradeModal
 
 class TradingCog(commands.Cog):
@@ -131,29 +131,78 @@ class TradingCog(commands.Cog):
         embed = TradeEmbed.create_trade_offer(trade, requester_user, target)
         
         if target:
-            view = TradeView(trade_id, interaction.user.id, target.id)
+            view = PersistentTradeView(trade_id, interaction.user.id, target.id)
             msg = await interaction.followup.send(
                 content=f"{target.mention}, you have a trade offer!",
                 embed=embed,
                 view=view
             )
-            view.message = msg
             
-            await view.wait()
-            
-            if view.result == 'accepted':
-                await self._process_trade_acceptance(interaction, trade_id, target)
-            elif view.result == 'declined':
-                await update_trade(trade_id, status='cancelled')
-                await add_trade_history(trade_id, 'declined', target.id)
-            elif view.result == 'expired':
-                await update_trade(trade_id, status='expired')
-                await add_trade_history(trade_id, 'expired', 0)
-        else:
             await interaction.followup.send(
-                "Trade offer created! Share the trade ID with potential traders.",
-                embed=embed
+                f"Trade #{trade_id} created and sent to {target.mention}! "
+                f"They can accept, decline, or negotiate using the buttons.",
+                ephemeral=True
             )
+        else:
+            if interaction.guild:
+                trade_channel_id = await get_trade_channel(interaction.guild.id)
+                if trade_channel_id:
+                    trade_channel = interaction.guild.get_channel(trade_channel_id)
+                    if trade_channel:
+                        announcement_view = TradeAnnouncementView(trade_id, interaction.user.id, game)
+                        
+                        announcement_embed = discord.Embed(
+                            title="New Trade Available!",
+                            color=0x2ECC71,
+                            description=f"{interaction.user.mention} is looking to trade!"
+                        )
+                        announcement_embed.add_field(name="Trade ID", value=f"#{trade_id}", inline=True)
+                        announcement_embed.add_field(name="Game", value=GAME_NAMES.get(game, game), inline=True)
+                        
+                        items_str = trade.get('requester_items', '[]')
+                        items = json.loads(items_str) if items_str else []
+                        if items:
+                            items_preview = "\n".join([f"• {i['name']}" for i in items[:5]])
+                            if len(items) > 5:
+                                items_preview += f"\n... and {len(items) - 5} more items"
+                            announcement_embed.add_field(name="Items Offered", value=items_preview, inline=False)
+                        
+                        user_data = await get_user(interaction.user.id)
+                        if user_data:
+                            trust_tier = user_data.get('trust_tier', 'Bronze')
+                            tier_emoji = {"Bronze": "🥉", "Silver": "🥈", "Gold": "🥇", "Platinum": "💎", "Diamond": "💠"}.get(trust_tier, "🏅")
+                            announcement_embed.add_field(
+                                name="Trader Info",
+                                value=f"Trust: {user_data.get('trust_score', 50):.0f}/100 | {tier_emoji} {trust_tier}",
+                                inline=True
+                            )
+                        
+                        announcement_embed.set_thumbnail(url=interaction.user.display_avatar.url)
+                        announcement_embed.set_footer(text="Click the buttons below to interact with this trade!")
+                        
+                        await trade_channel.send(embed=announcement_embed, view=announcement_view)
+                        
+                        await interaction.followup.send(
+                            f"Trade #{trade_id} created and announced in {trade_channel.mention}! "
+                            f"Others can express interest using the buttons there.",
+                            ephemeral=True
+                        )
+                    else:
+                        await interaction.followup.send(
+                            f"Trade #{trade_id} created! Share it with potential traders or use `/trade view {trade_id}`.",
+                            embed=embed
+                        )
+                else:
+                    await interaction.followup.send(
+                        f"Trade #{trade_id} created! Share it with potential traders.\n"
+                        f"**Tip:** Ask a server admin to set up a trade channel with `/settings tradechannel`",
+                        embed=embed
+                    )
+            else:
+                await interaction.followup.send(
+                    f"Trade #{trade_id} created! Share it with potential traders.",
+                    embed=embed
+                )
     
     async def _process_trade_acceptance(self, interaction: discord.Interaction, trade_id: int, target: discord.User):
         trade = await get_trade(trade_id)
