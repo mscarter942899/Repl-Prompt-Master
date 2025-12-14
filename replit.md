@@ -129,6 +129,16 @@ Items stored in the database have the following fields:
 - Handoff buttons: "I traded in-game", "Something went wrong", "Upload Proof"
 
 ## Recent Changes
+- **Dec 2024**: Enhanced UI with Custom Diamond Emoji & Improved Buttons
+  - Added custom diamond emoji <:diamonds:1449866490495893577> for all gem displays
+  - Created ui/constants.py for centralized emoji and formatting constants
+  - Enhanced announcement view with 5 buttons: I'm Interested!, View Items, Trader Profile, Share, Save
+  - Improved Trader Profile button with trust progress bars and detailed stats
+  - Enhanced View Items button with detailed item breakdown and values
+  - Added bookmark/save functionality for trades
+  - Better trade announcement embeds with game emojis and total value display
+  - Trading ticket system fully functional with 8 interactive buttons
+
 - **Dec 2024**: Fixed trade creation bug and improved announcements
   - Fixed critical bug where trade creation was silently failing
   - Trade announcements now show the item's image as thumbnail (not user avatar)
