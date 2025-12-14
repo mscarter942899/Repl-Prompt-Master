@@ -211,12 +211,29 @@ async def init_database():
             )
         ''')
         
+        await db.execute('''
+            CREATE TABLE IF NOT EXISTS trade_tickets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                trade_id INTEGER NOT NULL UNIQUE,
+                thread_id INTEGER NOT NULL,
+                channel_id INTEGER NOT NULL,
+                guild_id INTEGER NOT NULL,
+                requester_id INTEGER NOT NULL,
+                target_id INTEGER NOT NULL,
+                status TEXT DEFAULT 'open',
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                closed_at TEXT,
+                FOREIGN KEY (trade_id) REFERENCES trades(id)
+            )
+        ''')
+        
         await db.execute('CREATE INDEX IF NOT EXISTS idx_game_trade_channels ON game_trade_channels(guild_id, game)')
         await db.execute('CREATE INDEX IF NOT EXISTS idx_items_game ON items(game)')
         await db.execute('CREATE INDEX IF NOT EXISTS idx_items_normalized ON items(normalized_name)')
         await db.execute('CREATE INDEX IF NOT EXISTS idx_trades_status ON trades(status)')
         await db.execute('CREATE INDEX IF NOT EXISTS idx_trades_users ON trades(requester_id, target_id)')
         await db.execute('CREATE INDEX IF NOT EXISTS idx_inventories_user ON inventories(user_id)')
+        await db.execute('CREATE INDEX IF NOT EXISTS idx_trade_tickets ON trade_tickets(trade_id)')
         
         await db.commit()
 
@@ -664,3 +681,46 @@ async def get_item_count(game: Optional[str] = None) -> int:
             async with db.execute('SELECT COUNT(*) FROM items') as cursor:
                 row = await cursor.fetchone()
                 return row[0] if row else 0
+
+
+async def create_trade_ticket(trade_id: int, thread_id: int, channel_id: int, guild_id: int, requester_id: int, target_id: int) -> Optional[int]:
+    """Create a trade ticket record for a private thread."""
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        try:
+            cursor = await db.execute('''
+                INSERT INTO trade_tickets (trade_id, thread_id, channel_id, guild_id, requester_id, target_id)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (trade_id, thread_id, channel_id, guild_id, requester_id, target_id))
+            await db.commit()
+            return cursor.lastrowid
+        except Exception:
+            return None
+
+
+async def get_trade_ticket(trade_id: int) -> Optional[Dict]:
+    """Get a trade ticket by trade ID."""
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute('SELECT * FROM trade_tickets WHERE trade_id = ?', (trade_id,)) as cursor:
+            row = await cursor.fetchone()
+            return dict(row) if row else None
+
+
+async def get_ticket_by_thread(thread_id: int) -> Optional[Dict]:
+    """Get a trade ticket by thread ID."""
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute('SELECT * FROM trade_tickets WHERE thread_id = ?', (thread_id,)) as cursor:
+            row = await cursor.fetchone()
+            return dict(row) if row else None
+
+
+async def close_trade_ticket(trade_id: int) -> bool:
+    """Mark a trade ticket as closed."""
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        await db.execute('''
+            UPDATE trade_tickets SET status = 'closed', closed_at = CURRENT_TIMESTAMP
+            WHERE trade_id = ?
+        ''', (trade_id,))
+        await db.commit()
+        return True

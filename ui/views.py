@@ -36,11 +36,11 @@ class AcceptButton(Button):
             await interaction.response.send_message("Only the trade recipient can accept this trade.", ephemeral=True)
             return
         
-        from utils.database import update_trade, add_trade_history
+        from utils.database import update_trade, add_trade_history, get_trade, create_trade_ticket
+        from ui.embeds import GAME_NAMES
+        
         await update_trade(self.trade_id, status='accepted')
         await add_trade_history(self.trade_id, 'accepted', interaction.user.id)
-        
-        await interaction.response.send_message("Trade accepted! Complete the trade in-game and confirm below.", ephemeral=False)
         
         if self.view:
             for child in self.view.children:
@@ -49,12 +49,88 @@ class AcceptButton(Button):
             if interaction.message:
                 await interaction.message.edit(view=self.view)
         
-        handoff_view = DynamicHandoffView(self.trade_id, self.requester_id, self.target_id)
+        trade = await get_trade(self.trade_id)
+        game_name = GAME_NAMES.get(trade['game'], trade['game']) if trade else "Unknown Game"
         requester = await interaction.client.fetch_user(self.requester_id)
-        await interaction.followup.send(
-            f"{requester.mention} {interaction.user.mention} - Complete your trade in-game and confirm below!",
-            view=handoff_view
-        )
+        
+        if interaction.guild and interaction.channel and isinstance(interaction.channel, discord.TextChannel):
+            try:
+                thread = await interaction.channel.create_thread(
+                    name=f"Trade #{self.trade_id} - {requester.display_name} & {interaction.user.display_name}",
+                    type=discord.ChannelType.private_thread,
+                    auto_archive_duration=1440
+                )
+                
+                try:
+                    await thread.add_user(requester)
+                except (discord.Forbidden, discord.HTTPException):
+                    pass
+                try:
+                    await thread.add_user(interaction.user)
+                except (discord.Forbidden, discord.HTTPException):
+                    pass
+                
+                await create_trade_ticket(
+                    trade_id=self.trade_id,
+                    thread_id=thread.id,
+                    channel_id=interaction.channel.id,
+                    guild_id=interaction.guild.id,
+                    requester_id=self.requester_id,
+                    target_id=self.target_id
+                )
+                
+                welcome_embed = discord.Embed(
+                    title=f"🎫 Trade Ticket #{self.trade_id}",
+                    description=f"**{game_name}** trade between {requester.mention} and {interaction.user.mention}",
+                    color=0x2ECC71
+                )
+                welcome_embed.add_field(
+                    name="📋 How This Works",
+                    value="1️⃣ Share your Roblox usernames below\n"
+                          "2️⃣ Add each other in-game\n"
+                          "3️⃣ Complete the trade in Roblox\n"
+                          "4️⃣ Both confirm using the buttons",
+                    inline=False
+                )
+                welcome_embed.add_field(
+                    name="⚠️ Safety Reminders",
+                    value="• Never trade items outside the agreed deal\n"
+                          "• Take screenshots of the trade\n"
+                          "• Report any issues immediately",
+                    inline=False
+                )
+                welcome_embed.set_footer(text="This ticket will auto-archive after 24 hours of inactivity")
+                
+                ticket_view = TradeTicketView(self.trade_id, self.requester_id, self.target_id, trade['game'] if trade else 'unknown')
+                
+                await thread.send(
+                    f"🔔 {requester.mention} {interaction.user.mention} - Your private trade room is ready!",
+                    embed=welcome_embed,
+                    view=ticket_view
+                )
+                
+                await interaction.response.send_message(
+                    f"✅ Trade accepted! A private trade ticket has been created: {thread.mention}",
+                    ephemeral=False
+                )
+                
+            except discord.Forbidden:
+                await interaction.response.send_message(
+                    "Trade accepted, but I couldn't create a private thread. Please coordinate in DMs.",
+                    ephemeral=False
+                )
+                handoff_view = DynamicHandoffView(self.trade_id, self.requester_id, self.target_id)
+                await interaction.followup.send(
+                    f"{requester.mention} {interaction.user.mention} - Complete your trade in-game!",
+                    view=handoff_view
+                )
+        else:
+            await interaction.response.send_message("Trade accepted! Complete the trade in-game and confirm below.", ephemeral=False)
+            handoff_view = DynamicHandoffView(self.trade_id, self.requester_id, self.target_id)
+            await interaction.followup.send(
+                f"{requester.mention} {interaction.user.mention} - Complete your trade in-game and confirm below!",
+                view=handoff_view
+            )
 
 
 class DeclineButton(Button):
@@ -674,6 +750,413 @@ class ConfirmView(View):
     
     async def on_timeout(self):
         self.result = False
+
+
+class TradeTicketView(View):
+    """Enhanced view for trade tickets with all the tools traders need."""
+    def __init__(self, trade_id: int, requester_id: int, target_id: int, game: str):
+        super().__init__(timeout=None)
+        self.trade_id = trade_id
+        self.requester_id = requester_id
+        self.target_id = target_id
+        self.game = game
+        
+        self.add_item(ShareRobloxUsernameButton(trade_id, requester_id, target_id))
+        self.add_item(TicketConfirmTradeButton(trade_id, requester_id, target_id))
+        self.add_item(SafetyChecklistButton(trade_id))
+        self.add_item(ViewTradeItemsButton(trade_id))
+        self.add_item(TicketUploadProofButton(trade_id, requester_id, target_id))
+        self.add_item(InviteModeratorButton(trade_id, requester_id, target_id))
+        self.add_item(TicketReportIssueButton(trade_id, requester_id, target_id))
+        self.add_item(CloseTicketButton(trade_id, requester_id, target_id))
+
+
+class ShareRobloxUsernameButton(Button):
+    def __init__(self, trade_id: int, requester_id: int, target_id: int):
+        super().__init__(label="Share Roblox Username", style=discord.ButtonStyle.primary, emoji="🎮", custom_id=f"ticket:roblox:{trade_id}", row=0)
+        self.trade_id = trade_id
+        self.requester_id = requester_id
+        self.target_id = target_id
+    
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id not in (self.requester_id, self.target_id):
+            await interaction.response.send_message("You are not part of this trade.", ephemeral=True)
+            return
+        
+        modal = RobloxUsernameModal(self.trade_id)
+        await interaction.response.send_modal(modal)
+
+
+class RobloxUsernameModal(Modal):
+    def __init__(self, trade_id: int):
+        super().__init__(title="Share Your Roblox Username")
+        self.trade_id = trade_id
+        self.username_input = TextInput(
+            label="Your Roblox Username",
+            placeholder="Enter your exact Roblox username...",
+            min_length=3,
+            max_length=20,
+            required=True
+        )
+        self.add_item(self.username_input)
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        username = self.username_input.value
+        embed = discord.Embed(
+            title="🎮 Roblox Username Shared",
+            description=f"**{interaction.user.display_name}**'s Roblox username:",
+            color=0x00A2FF
+        )
+        embed.add_field(name="Username", value=f"`{username}`", inline=False)
+        embed.add_field(name="Profile Link", value=f"[View Profile](https://www.roblox.com/users/profile?username={username})", inline=False)
+        embed.set_footer(text="Add them in-game to start the trade!")
+        
+        await interaction.response.send_message(embed=embed)
+
+
+class TicketConfirmTradeButton(Button):
+    def __init__(self, trade_id: int, requester_id: int, target_id: int):
+        super().__init__(label="Confirm Trade Complete", style=discord.ButtonStyle.success, emoji="✅", custom_id=f"ticket:confirm:{trade_id}", row=0)
+        self.trade_id = trade_id
+        self.requester_id = requester_id
+        self.target_id = target_id
+    
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id not in (self.requester_id, self.target_id):
+            await interaction.response.send_message("You are not part of this trade.", ephemeral=True)
+            return
+        
+        from utils.database import get_trade, update_trade, add_trade_history, get_user, update_user, close_trade_ticket
+        from utils.trust_engine import trust_engine
+        from datetime import datetime
+        
+        trade = await get_trade(self.trade_id)
+        if not trade:
+            await interaction.response.send_message("Trade not found.", ephemeral=True)
+            return
+        
+        field = 'requester_confirmed' if interaction.user.id == self.requester_id else 'target_confirmed'
+        await update_trade(self.trade_id, **{field: 1})
+        
+        trade = await get_trade(self.trade_id)
+        if trade and trade['requester_confirmed'] and trade['target_confirmed']:
+            await update_trade(self.trade_id, status='completed', completed_at=datetime.utcnow().isoformat())
+            await add_trade_history(self.trade_id, 'completed', 0)
+            await close_trade_ticket(self.trade_id)
+            
+            requester_data = await get_user(self.requester_id)
+            target_data = await get_user(self.target_id)
+            
+            if requester_data:
+                req_updates = trust_engine.update_reputation(requester_data, 'trade_completed')
+                await update_user(self.requester_id, **req_updates)
+            if target_data:
+                tgt_updates = trust_engine.update_reputation(target_data, 'trade_completed')
+                await update_user(self.target_id, **tgt_updates)
+            
+            if self.view:
+                for child in self.view.children:
+                    if hasattr(child, 'disabled'):
+                        child.disabled = True
+                if interaction.message:
+                    await interaction.message.edit(view=self.view)
+            
+            receipt_hash = trust_engine.generate_receipt_hash(trade)
+            await update_trade(self.trade_id, receipt_hash=receipt_hash)
+            
+            embed = discord.Embed(
+                title="🎉 Trade Completed Successfully!",
+                description=f"Trade #{self.trade_id} has been verified and completed.",
+                color=0x2ECC71
+            )
+            embed.add_field(name="Receipt Hash", value=f"`{receipt_hash[:32]}...`", inline=False)
+            embed.add_field(name="Status", value="Both parties confirmed", inline=True)
+            embed.set_footer(text="Trust scores updated! This ticket will be archived.")
+            
+            await interaction.response.send_message(embed=embed)
+            
+            if isinstance(interaction.channel, discord.Thread):
+                await interaction.followup.send("🔒 This ticket will be archived in 1 minute. Thank you for trading safely!")
+                import asyncio
+                await asyncio.sleep(60)
+                try:
+                    await interaction.channel.edit(archived=True, locked=True)
+                except:
+                    pass
+        else:
+            other_user = await interaction.client.fetch_user(self.target_id if interaction.user.id == self.requester_id else self.requester_id)
+            await interaction.response.send_message(
+                f"✅ {interaction.user.display_name} confirmed the trade!\n⏳ Waiting for {other_user.display_name} to confirm...",
+                ephemeral=False
+            )
+
+
+class SafetyChecklistButton(Button):
+    def __init__(self, trade_id: int):
+        super().__init__(label="Safety Checklist", style=discord.ButtonStyle.secondary, emoji="🛡️", custom_id=f"ticket:safety:{trade_id}", row=1)
+        self.trade_id = trade_id
+    
+    async def callback(self, interaction: discord.Interaction):
+        embed = discord.Embed(
+            title="🛡️ Trade Safety Checklist",
+            description="Make sure you follow these steps for a safe trade:",
+            color=0xF1C40F
+        )
+        embed.add_field(
+            name="Before Trading",
+            value="☐ Verified the other player's username\n"
+                  "☐ Double-checked the items being traded\n"
+                  "☐ Confirmed the agreed values\n"
+                  "☐ Screenshots ready to record the trade",
+            inline=False
+        )
+        embed.add_field(
+            name="During Trade",
+            value="☐ In the same Roblox server\n"
+                  "☐ Items in trade window match agreement\n"
+                  "☐ No additional items requested\n"
+                  "☐ Take a screenshot before accepting",
+            inline=False
+        )
+        embed.add_field(
+            name="After Trading",
+            value="☐ Received the correct items\n"
+                  "☐ Upload proof if needed\n"
+                  "☐ Confirm trade in Discord\n"
+                  "☐ Report any issues immediately",
+            inline=False
+        )
+        embed.set_footer(text="Stay safe and report scammers!")
+        
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+class ViewTradeItemsButton(Button):
+    def __init__(self, trade_id: int):
+        super().__init__(label="View Trade Items", style=discord.ButtonStyle.secondary, emoji="📦", custom_id=f"ticket:items:{trade_id}", row=1)
+        self.trade_id = trade_id
+    
+    async def callback(self, interaction: discord.Interaction):
+        from utils.database import get_trade
+        from ui.embeds import GAME_NAMES
+        
+        trade = await get_trade(self.trade_id)
+        if not trade:
+            await interaction.response.send_message("Trade not found.", ephemeral=True)
+            return
+        
+        items_str = trade.get('requester_items', '[]')
+        items = json.loads(items_str) if items_str else []
+        
+        embed = discord.Embed(
+            title=f"📦 Trade #{self.trade_id} Items",
+            description=f"**Game:** {GAME_NAMES.get(trade['game'], trade['game'])}",
+            color=0x3498DB
+        )
+        
+        if items:
+            for i, item in enumerate(items[:10], 1):
+                rarity = item.get('rarity', 'Common')
+                value = item.get('value', 0)
+                rarity_emoji = {"Common": "⚪", "Uncommon": "🟢", "Rare": "🔵", "Epic": "🟣", "Legendary": "🟡", "Mythical": "🔴"}.get(rarity, "⚪")
+                embed.add_field(
+                    name=f"{rarity_emoji} {item['name']}",
+                    value=f"Value: {value:,.0f} | {rarity}",
+                    inline=True
+                )
+            if len(items) > 10:
+                embed.add_field(name="...", value=f"and {len(items) - 10} more items", inline=False)
+        
+        total_value = sum(i.get('value', 0) for i in items)
+        embed.add_field(name="💰 Total Value", value=f"{total_value:,.0f}", inline=False)
+        
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+class TicketUploadProofButton(Button):
+    def __init__(self, trade_id: int, requester_id: int, target_id: int):
+        super().__init__(label="Upload Proof", style=discord.ButtonStyle.secondary, emoji="📸", custom_id=f"ticket:proof:{trade_id}", row=1)
+        self.trade_id = trade_id
+        self.requester_id = requester_id
+        self.target_id = target_id
+    
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id not in (self.requester_id, self.target_id):
+            await interaction.response.send_message("You are not part of this trade.", ephemeral=True)
+            return
+        
+        embed = discord.Embed(
+            title="📸 Upload Trade Proof",
+            description="To upload proof of your trade:",
+            color=0x3498DB
+        )
+        embed.add_field(
+            name="Instructions",
+            value="1. Take a screenshot of the completed trade\n"
+                  "2. Reply to this message with your screenshot attached\n"
+                  "3. The image will be saved as proof for this trade",
+            inline=False
+        )
+        embed.set_footer(text="Screenshots help resolve disputes if issues arise")
+        
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+class InviteModeratorButton(Button):
+    def __init__(self, trade_id: int, requester_id: int, target_id: int):
+        super().__init__(label="Invite Mod", style=discord.ButtonStyle.secondary, emoji="👮", custom_id=f"ticket:invitemod:{trade_id}", row=2)
+        self.trade_id = trade_id
+        self.requester_id = requester_id
+        self.target_id = target_id
+    
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id not in (self.requester_id, self.target_id):
+            await interaction.response.send_message("You are not part of this trade.", ephemeral=True)
+            return
+        
+        from utils.database import get_guild_settings
+        
+        if not interaction.guild:
+            await interaction.response.send_message("This feature only works in a server.", ephemeral=True)
+            return
+        
+        settings = await get_guild_settings(interaction.guild.id)
+        mod_role_id = settings.get('mod_role_id') if settings else None
+        
+        if mod_role_id:
+            mod_role = interaction.guild.get_role(mod_role_id)
+            if mod_role:
+                await interaction.response.send_message(
+                    f"🚨 {mod_role.mention} - A moderator has been requested for Trade #{self.trade_id}!\n"
+                    f"Requested by: {interaction.user.mention}",
+                    allowed_mentions=discord.AllowedMentions(roles=True)
+                )
+            else:
+                await interaction.response.send_message(
+                    "⚠️ Moderator role not found. Please contact server staff directly.",
+                    ephemeral=True
+                )
+        else:
+            await interaction.response.send_message(
+                "⚠️ No moderator role configured. Please contact server staff directly.\n"
+                "**Tip:** Admins can set a mod role with `/settings modrole`",
+                ephemeral=True
+            )
+
+
+class TicketReportIssueButton(Button):
+    def __init__(self, trade_id: int, requester_id: int, target_id: int):
+        super().__init__(label="Report Issue", style=discord.ButtonStyle.danger, emoji="⚠️", custom_id=f"ticket:issue:{trade_id}", row=2)
+        self.trade_id = trade_id
+        self.requester_id = requester_id
+        self.target_id = target_id
+    
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id not in (self.requester_id, self.target_id):
+            await interaction.response.send_message("You are not part of this trade.", ephemeral=True)
+            return
+        
+        from utils.database import update_trade, add_trade_history
+        
+        await update_trade(self.trade_id, status='disputed')
+        await add_trade_history(self.trade_id, 'disputed', interaction.user.id)
+        
+        embed = discord.Embed(
+            title="⚠️ Trade Issue Reported",
+            description=f"Trade #{self.trade_id} has been flagged for review.",
+            color=0xE74C3C
+        )
+        embed.add_field(name="Reported by", value=interaction.user.mention, inline=True)
+        embed.add_field(name="Status", value="Awaiting moderator review", inline=True)
+        embed.add_field(
+            name="What happens now?",
+            value="• A moderator will review this trade\n"
+                  "• Both parties should provide evidence\n"
+                  "• Do not delete any messages in this ticket",
+            inline=False
+        )
+        
+        await interaction.response.send_message(embed=embed)
+
+
+class CloseTicketButton(Button):
+    def __init__(self, trade_id: int, requester_id: int, target_id: int):
+        super().__init__(label="Close Ticket", style=discord.ButtonStyle.secondary, emoji="🔒", custom_id=f"ticket:close:{trade_id}", row=2)
+        self.trade_id = trade_id
+        self.requester_id = requester_id
+        self.target_id = target_id
+    
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id not in (self.requester_id, self.target_id):
+            if not (interaction.guild and isinstance(interaction.user, discord.Member) and interaction.user.guild_permissions.manage_threads):
+                await interaction.response.send_message("Only trade participants or moderators can close this ticket.", ephemeral=True)
+                return
+        
+        from utils.database import get_trade, close_trade_ticket
+        
+        trade = await get_trade(self.trade_id)
+        if trade and trade['status'] not in ('completed', 'cancelled', 'disputed'):
+            view = ConfirmCloseView(self.trade_id, interaction.user.id)
+            await interaction.response.send_message(
+                "⚠️ This trade is not yet complete. Are you sure you want to close the ticket?",
+                view=view,
+                ephemeral=True
+            )
+        else:
+            await close_trade_ticket(self.trade_id)
+            
+            if self.view:
+                for child in self.view.children:
+                    if hasattr(child, 'disabled'):
+                        child.disabled = True
+                if interaction.message:
+                    await interaction.message.edit(view=self.view)
+            
+            await interaction.response.send_message("🔒 Ticket closed. This thread will be archived.")
+            
+            if isinstance(interaction.channel, discord.Thread):
+                import asyncio
+                await asyncio.sleep(5)
+                try:
+                    await interaction.channel.edit(archived=True)
+                except:
+                    pass
+
+
+class ConfirmCloseView(View):
+    def __init__(self, trade_id: int, user_id: int):
+        super().__init__(timeout=60)
+        self.trade_id = trade_id
+        self.user_id = user_id
+    
+    @discord.ui.button(label="Yes, Close", style=discord.ButtonStyle.danger)
+    async def confirm(self, interaction: discord.Interaction, button: Button):
+        if interaction.user.id != self.user_id:
+            return
+        
+        from utils.database import update_trade, close_trade_ticket
+        
+        await update_trade(self.trade_id, status='cancelled')
+        await close_trade_ticket(self.trade_id)
+        
+        await interaction.response.send_message("🔒 Ticket closed and trade cancelled.")
+        
+        if isinstance(interaction.channel, discord.Thread):
+            import asyncio
+            await asyncio.sleep(5)
+            try:
+                await interaction.channel.edit(archived=True)
+            except:
+                pass
+        
+        self.stop()
+    
+    @discord.ui.button(label="No, Keep Open", style=discord.ButtonStyle.secondary)
+    async def cancel(self, interaction: discord.Interaction, button: Button):
+        if interaction.user.id != self.user_id:
+            return
+        await interaction.response.send_message("Ticket will remain open.", ephemeral=True)
+        self.stop()
 
 
 class PaginatorView(View):
