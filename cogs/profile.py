@@ -31,6 +31,13 @@ class ProfileCog(commands.Cog):
                 )
                 return
         
+        if not profile_data:
+            await interaction.response.send_message(
+                "Failed to create profile. Please try again.",
+                ephemeral=True
+            )
+            return
+        
         discord_age = (discord.utils.utcnow() - target.created_at).days
         profile_data['discord_age_days'] = discord_age
         
@@ -40,7 +47,8 @@ class ProfileCog(commands.Cog):
         profile_data['trust_score'] = trust_score
         profile_data['trust_tier'] = tier.value
         
-        embed = ProfileEmbed.create(target, profile_data)
+        target_user = target if isinstance(target, discord.User) else await self.bot.fetch_user(target.id)
+        embed = ProfileEmbed.create(target_user, profile_data)
         await interaction.response.send_message(embed=embed)
     
     @app_commands.command(name="link_roblox", description="Link your Roblox account")

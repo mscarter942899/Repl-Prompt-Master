@@ -14,19 +14,23 @@ class AnalyticsCog(commands.Cog):
     async def server_stats(self, interaction: discord.Interaction):
         async with aiosqlite.connect(DATABASE_PATH) as db:
             async with db.execute('SELECT COUNT(*) FROM trades') as cursor:
-                total_trades = (await cursor.fetchone())[0]
+                row = await cursor.fetchone()
+                total_trades = row[0] if row else 0
             
             async with db.execute("SELECT COUNT(*) FROM trades WHERE status = 'completed'") as cursor:
-                completed_trades = (await cursor.fetchone())[0]
+                row = await cursor.fetchone()
+                completed_trades = row[0] if row else 0
             
             async with db.execute("SELECT COUNT(*) FROM trades WHERE status = 'disputed'") as cursor:
-                disputed_trades = (await cursor.fetchone())[0]
+                row = await cursor.fetchone()
+                disputed_trades = row[0] if row else 0
             
             async with db.execute('SELECT COUNT(DISTINCT requester_id) FROM trades') as cursor:
-                unique_traders = (await cursor.fetchone())[0]
+                row = await cursor.fetchone()
+                unique_traders = row[0] if row else 0
             
             async with db.execute('SELECT game, COUNT(*) as count FROM trades GROUP BY game ORDER BY count DESC') as cursor:
-                game_stats = await cursor.fetchall()
+                game_stats = list(await cursor.fetchall())
         
         embed = discord.Embed(
             title="Server Trading Statistics",
@@ -48,7 +52,7 @@ class AnalyticsCog(commands.Cog):
         embed.add_field(name="Unique Traders", value=str(unique_traders), inline=True)
         
         if game_stats:
-            game_text = "\n".join([f"{row[0].upper()}: {row[1]} trades" for row in game_stats[:5]])
+            game_text = "\n".join([f"{str(row[0]).upper()}: {row[1]} trades" for row in game_stats[:5]])
             embed.add_field(name="Trades by Game", value=game_text, inline=False)
         
         await interaction.response.send_message(embed=embed)
@@ -118,14 +122,15 @@ class AnalyticsCog(commands.Cog):
                 ORDER BY updated_at DESC 
                 LIMIT 10
             ''') as cursor:
-                recent_trades = await cursor.fetchall()
+                recent_trades = list(await cursor.fetchall())
             
             today = datetime.utcnow().date().isoformat()
-            async with db.execute(f'''
+            async with db.execute('''
                 SELECT COUNT(*) FROM trades 
                 WHERE DATE(created_at) = ?
             ''', (today,)) as cursor:
-                today_count = (await cursor.fetchone())[0]
+                row = await cursor.fetchone()
+                today_count = row[0] if row else 0
         
         embed = discord.Embed(
             title="Recent Trading Activity",
@@ -137,7 +142,7 @@ class AnalyticsCog(commands.Cog):
         
         if recent_trades:
             activity_text = []
-            for trade in recent_trades[:5]:
+            for trade in list(recent_trades)[:5]:
                 status_emoji = {
                     'completed': '✅',
                     'pending': '⏳',

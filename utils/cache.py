@@ -26,7 +26,7 @@ class Cache:
                         del self._expiry[key]
             return None
     
-    async def set(self, key: str, value: Any, ttl: int = None) -> None:
+    async def set(self, key: str, value: Any, ttl: Optional[int] = None) -> None:
         async with self._lock:
             self._cache[key] = value
             expiry_time = timedelta(seconds=ttl) if ttl else self._default_ttl
@@ -55,7 +55,7 @@ class Cache:
                 del self._expiry[key]
             return len(expired)
     
-    def cached(self, ttl: int = None):
+    def cached(self, ttl: Optional[int] = None):
         def decorator(func):
             async def wrapper(*args, **kwargs):
                 key = f"{func.__name__}:{self._generate_key(*args, **kwargs)}"

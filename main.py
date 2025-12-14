@@ -56,6 +56,10 @@ class RobloxTradingBot(commands.Bot):
             except Exception as e:
                 logger.error(f"Failed to load {extension}: {e}")
         
+        logger.info("Registering persistent views...")
+        from ui.persistent_views import setup_persistent_views
+        setup_persistent_views(self)
+        
         logger.info("Syncing commands...")
         try:
             synced = await self.tree.sync()
