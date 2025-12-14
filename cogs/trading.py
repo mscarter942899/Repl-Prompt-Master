@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from utils.database import (
     get_user, create_user, update_user, 
     create_trade, update_trade, get_trade, get_user_trades,
-    add_trade_history, log_audit, get_trade_channel
+    add_trade_history, log_audit, get_trade_channel, get_game_trade_channel
 )
 from utils.resolver import item_resolver
 from utils.trust_engine import trust_engine, RiskLevel
@@ -145,7 +145,7 @@ class TradingCog(commands.Cog):
             )
         else:
             if interaction.guild:
-                trade_channel_id = await get_trade_channel(interaction.guild.id)
+                trade_channel_id = await get_game_trade_channel(interaction.guild.id, game)
                 if trade_channel_id:
                     trade_channel = interaction.guild.get_channel(trade_channel_id)
                     if trade_channel and isinstance(trade_channel, discord.TextChannel):
