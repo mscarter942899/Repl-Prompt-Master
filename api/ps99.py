@@ -103,8 +103,8 @@ class PS99Adapter(GameAPIAdapter):
                 items = []
                 for item in data['data']:
                     config = item.get('configData', {})
-                    pet_id = config.get('id', str(item.get('_id', '')))
-                    name = config.get('name', item.get('configName', 'Unknown'))
+                    name = config.get('name', '') or item.get('configName', 'Unknown')
+                    pet_id = name.lower() if name else ''
                     
                     huge = config.get('huge', False)
                     titanic = config.get('titanic', False)
@@ -165,9 +165,10 @@ class PS99Adapter(GameAPIAdapter):
         if items and rap_data:
             for item in items:
                 item_id = item.get('id', '').lower()
-                item_name = self._normalize_name(item.get('name', ''))
+                item_name = item.get('name', '').lower()
+                normalized_name = self._normalize_name(item.get('name', ''))
                 
-                rap_value = rap_data.get(item_id) or rap_data.get(item_name, 0)
+                rap_value = rap_data.get(item_name) or rap_data.get(item_id) or rap_data.get(normalized_name, 0)
                 
                 if 'metadata' not in item:
                     item['metadata'] = {}
