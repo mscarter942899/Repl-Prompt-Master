@@ -129,6 +129,14 @@ Items stored in the database have the following fields:
 - Handoff buttons: "I traded in-game", "Something went wrong", "Upload Proof"
 
 ## Recent Changes
+- **Dec 2024**: Fixed /item command and improved database population
+  - Database now auto-populates from fallback data on startup if empty
+  - Added `/owner refresh_cache` - Fetches items from APIs and saves to database
+  - Added `/owner load_fallback` - Manually load fallback data into database
+  - Fixed item resolution to work correctly with database items
+  - Bot now shows item count in `/owner status`
+  - 138 items pre-loaded across all 5 games
+
 - **Dec 2024**: Added direct image upload support
   - All item management commands now support uploading images directly from your device
   - Simply attach an image when using `/manage add`, `/manage update`, or `/manage setimage`

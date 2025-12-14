@@ -6,16 +6,23 @@ import json
 import os
 
 from api.base import APIRegistry
-from utils.database import init_database
+from utils.database import init_database, bulk_upsert_items, get_item_count, populate_from_fallback
+
+
+def is_owner():
+    async def predicate(interaction: discord.Interaction) -> bool:
+        if interaction.client.application:
+            if interaction.client.application.owner:
+                return interaction.user.id == interaction.client.application.owner.id
+            if interaction.client.application.team:
+                return interaction.user.id in [m.id for m in interaction.client.application.team.members]
+        return False
+    return app_commands.check(predicate)
+
 
 class OwnerCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-    
-    def is_owner():
-        async def predicate(interaction: discord.Interaction) -> bool:
-            return await interaction.client.is_owner(interaction.user)
-        return app_commands.check(predicate)
     
     owner_group = app_commands.Group(name="owner", description="Bot owner commands")
     
@@ -36,9 +43,12 @@ class OwnerCog(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         
         try:
-            self.bot.tree.copy_global_to(guild=interaction.guild)
-            synced = await self.bot.tree.sync(guild=interaction.guild)
-            await interaction.followup.send(f"Synced {len(synced)} commands to this guild.")
+            if interaction.guild:
+                self.bot.tree.copy_global_to(guild=interaction.guild)
+                synced = await self.bot.tree.sync(guild=interaction.guild)
+                await interaction.followup.send(f"Synced {len(synced)} commands to this guild.")
+            else:
+                await interaction.followup.send("This command must be used in a guild.")
         except Exception as e:
             await interaction.followup.send(f"Failed to sync: {e}")
     
@@ -61,8 +71,12 @@ class OwnerCog(commands.Cog):
         )
         
         embed.add_field(name="Guilds", value=str(len(self.bot.guilds)), inline=True)
-        embed.add_field(name="Users", value=str(sum(g.member_count for g in self.bot.guilds)), inline=True)
+        total_members = sum(g.member_count or 0 for g in self.bot.guilds)
+        embed.add_field(name="Users", value=str(total_members), inline=True)
         embed.add_field(name="Latency", value=f"{self.bot.latency*1000:.0f}ms", inline=True)
+        
+        total_items = await get_item_count()
+        embed.add_field(name="Items in DB", value=str(total_items), inline=True)
         
         cogs_loaded = list(self.bot.cogs.keys())
         embed.add_field(name="Cogs Loaded", value=", ".join(cogs_loaded) or "None", inline=False)
@@ -73,7 +87,7 @@ class OwnerCog(commands.Cog):
         
         await interaction.response.send_message(embed=embed, ephemeral=True)
     
-    @owner_group.command(name="refresh_cache", description="Refresh all item caches")
+    @owner_group.command(name="refresh_cache", description="Refresh all item caches and save to database")
     @is_owner()
     async def refresh_cache(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
@@ -85,13 +99,26 @@ class OwnerCog(commands.Cog):
                 adapter._cache_expiry.clear()
                 items = await adapter.fetch_items()
                 if items:
-                    refreshed.append(f"✅ {game.upper()}: {len(items)} items")
+                    count = await bulk_upsert_items(items, source='api')
+                    refreshed.append(f"✅ {game.upper()}: {count} items saved to database")
                 else:
-                    refreshed.append(f"⚠️ {game.upper()}: No items (using fallback)")
+                    refreshed.append(f"⚠️ {game.upper()}: No items fetched")
             except Exception as e:
                 refreshed.append(f"❌ {game.upper()}: {str(e)[:50]}")
         
         await interaction.followup.send("\n".join(refreshed))
+    
+    @owner_group.command(name="load_fallback", description="Load fallback data into database")
+    @is_owner()
+    async def load_fallback(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            results = await populate_from_fallback()
+            text = "\n".join([f"{'✅' if v > 0 else '⚠️'} {k.upper()}: {v} items" for k, v in results.items()])
+            await interaction.followup.send(f"Loaded fallback data:\n{text}")
+        except Exception as e:
+            await interaction.followup.send(f"Error loading fallback: {str(e)}")
     
     @owner_group.command(name="set_source", description="Set custom scraping URL for a game")
     @is_owner()

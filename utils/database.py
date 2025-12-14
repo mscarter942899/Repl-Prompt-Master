@@ -501,3 +501,110 @@ async def get_trade_channel(guild_id: int) -> Optional[int]:
 
 async def set_trade_channel(guild_id: int, channel_id: Optional[int]) -> None:
     await set_guild_settings(guild_id, trade_channel_id=channel_id)
+
+
+async def bulk_upsert_items(items: List[Dict], source: str = 'api') -> int:
+    """Bulk insert or update items in the database. Returns count of items processed."""
+    if not items:
+        return 0
+    
+    count = 0
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        for item in items:
+            game = item.get('game', '')
+            item_id = item.get('id', item.get('item_id', ''))
+            name = item.get('name', 'Unknown')
+            
+            if not game or not item_id or not name:
+                continue
+            
+            normalized = name.lower().replace(' ', '').replace('-', '').replace('_', '').replace("'", '')
+            
+            metadata = item.get('metadata', {})
+            if isinstance(metadata, dict):
+                import json
+                metadata = json.dumps(metadata)
+            
+            await db.execute('''
+                INSERT INTO items (game, item_id, name, normalized_name, rarity, icon_url, value, tradeable, source, metadata)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(game, item_id) DO UPDATE SET
+                    name = excluded.name,
+                    normalized_name = excluded.normalized_name,
+                    rarity = excluded.rarity,
+                    icon_url = excluded.icon_url,
+                    value = excluded.value,
+                    tradeable = excluded.tradeable,
+                    source = excluded.source,
+                    metadata = excluded.metadata,
+                    last_verified = CURRENT_TIMESTAMP
+            ''', (
+                game,
+                item_id,
+                name,
+                normalized,
+                item.get('rarity', 'Common'),
+                item.get('icon_url', item.get('icon', '')),
+                float(item.get('value', 0)),
+                1 if item.get('tradeable', True) else 0,
+                source,
+                metadata
+            ))
+            count += 1
+        
+        await db.commit()
+    
+    return count
+
+
+async def populate_from_fallback() -> Dict[str, int]:
+    """Load fallback data for all games into the database. Returns counts per game."""
+    import os
+    import json
+    
+    results = {}
+    games = ['ps99', 'gag', 'am', 'bf', 'sab']
+    
+    for game in games:
+        fallback_path = f'data/fallback_{game}.json'
+        if os.path.exists(fallback_path):
+            try:
+                with open(fallback_path, 'r') as f:
+                    data = json.load(f)
+                
+                items = []
+                for item in data.get('items', []):
+                    items.append({
+                        'game': game,
+                        'id': item.get('id', ''),
+                        'name': item.get('name', 'Unknown'),
+                        'rarity': item.get('rarity', 'Common'),
+                        'icon_url': item.get('icon', ''),
+                        'value': float(item.get('value', 0)),
+                        'tradeable': item.get('tradeable', True),
+                        'metadata': {k: v for k, v in item.items() if k not in ['id', 'name', 'rarity', 'icon', 'value', 'tradeable']}
+                    })
+                
+                if items:
+                    count = await bulk_upsert_items(items, source='fallback')
+                    results[game] = count
+            except Exception as e:
+                print(f"Error loading fallback for {game}: {e}")
+                results[game] = 0
+        else:
+            results[game] = 0
+    
+    return results
+
+
+async def get_item_count(game: Optional[str] = None) -> int:
+    """Get the count of items in the database, optionally filtered by game."""
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        if game:
+            async with db.execute('SELECT COUNT(*) FROM items WHERE game = ?', (game,)) as cursor:
+                row = await cursor.fetchone()
+                return row[0] if row else 0
+        else:
+            async with db.execute('SELECT COUNT(*) FROM items') as cursor:
+                row = await cursor.fetchone()
+                return row[0] if row else 0
