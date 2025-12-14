@@ -6,6 +6,7 @@ import json
 if TYPE_CHECKING:
     from typing import Union
 
+DIAMONDS_EMOJI = "<:diamonds:1449866490495893577>"
 
 RARITY_EMOJIS = {
     'Common': '⚪',
@@ -315,11 +316,11 @@ class GemsButton(Button):
     
     def __init__(self, side: str, current_amount: int):
         self.side = side
-        label = f"💎 Offer Gems" if side == "offering" else f"💎 Request Gems"
+        label = "Offer Gems" if side == "offering" else "Request Gems"
         if current_amount > 0:
-            label = f"💎 {format_value(current_amount)}"
+            label = f"{format_value(current_amount)} Diamonds"
         style = discord.ButtonStyle.success if side == "offering" else discord.ButtonStyle.primary
-        super().__init__(label=label, emoji="💎", style=style, row=2)
+        super().__init__(label=label, style=style, row=2)
     
     async def callback(self, interaction: discord.Interaction):
         if interaction.user.id != self.view.user_id:

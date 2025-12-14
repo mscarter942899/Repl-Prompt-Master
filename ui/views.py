@@ -2,6 +2,9 @@ import discord
 from discord.ui import View, Button, Select, Modal, TextInput
 from typing import Optional, List, Dict
 import json
+from ui.constants import DIAMONDS_EMOJI
+from ui.trade_builder import format_value, RARITY_EMOJIS
+from ui.embeds import GAME_NAMES, GAME_COLORS
 
 
 async def post_trade_to_feed(client, guild, trade, requester_id: int, target_id: int):
@@ -715,11 +718,12 @@ class DynamicAnnouncementView(View):
         self.add_item(ViewItemsButton(trade_id))
         self.add_item(TraderProfileButton(trade_id, requester_id))
         self.add_item(ShareAnnouncementButton(trade_id))
+        self.add_item(BookmarkAnnouncementButton(trade_id))
 
 
 class InterestedButton(Button):
     def __init__(self, trade_id: int, requester_id: int):
-        super().__init__(label="I'm Interested!", style=discord.ButtonStyle.success, emoji="🙋", custom_id=f"announce:interested:{trade_id}", row=0)
+        super().__init__(label="I'm Interested!", style=discord.ButtonStyle.success, emoji="🤩", custom_id=f"announce:interested:{trade_id}", row=0)
         self.trade_id = trade_id
         self.requester_id = requester_id
     
@@ -728,17 +732,44 @@ class InterestedButton(Button):
             await interaction.response.send_message("You can't express interest in your own trade!", ephemeral=True)
             return
         
-        requester = await interaction.client.fetch_user(self.requester_id)
+        from utils.database import get_trade, update_trade
         
-        embed = discord.Embed(title="Someone is Interested!", color=0x2ECC71)
-        embed.description = f"{interaction.user.mention} is interested in Trade #{self.trade_id}!"
+        requester = await interaction.client.fetch_user(self.requester_id)
+        trade = await get_trade(self.trade_id)
+        
+        embed = discord.Embed(
+            title="🔔 Someone is Interested in Your Trade!",
+            color=0x2ECC71
+        )
+        embed.description = f"**{interaction.user.display_name}** wants to trade with you!"
+        embed.add_field(name="Trade ID", value=f"#{self.trade_id}", inline=True)
+        if trade:
+            game_name = GAME_NAMES.get(trade['game'], trade['game'])
+            embed.add_field(name="Game", value=game_name, inline=True)
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
+        embed.add_field(
+            name="💬 Next Steps",
+            value=f"Reply to {interaction.user.mention} to discuss the trade!\nOr use `/trade accept {self.trade_id}` to start trading.",
+            inline=False
+        )
+        embed.set_footer(text="RoTrader - Safe Trading Made Easy")
         
         try:
             await requester.send(embed=embed)
-            await interaction.response.send_message(f"Interest sent to {requester.display_name}!", ephemeral=True)
+            
+            success_embed = discord.Embed(
+                title="✅ Interest Sent!",
+                description=f"We've notified **{requester.display_name}** that you're interested!",
+                color=0x2ECC71
+            )
+            success_embed.add_field(name="What's Next?", value="Wait for them to respond, or send them a DM to discuss the trade.", inline=False)
+            await interaction.response.send_message(embed=success_embed, ephemeral=True)
         except:
-            await interaction.response.send_message(f"Couldn't DM trader. Tag them: {requester.mention}", ephemeral=True)
+            await interaction.response.send_message(
+                f"Couldn't DM the trader. You can tag them directly: {requester.mention}\n"
+                f"Or use `/trade accept {self.trade_id}` to start trading!",
+                ephemeral=True
+            )
 
 
 class ViewItemsButton(Button):
@@ -748,7 +779,6 @@ class ViewItemsButton(Button):
     
     async def callback(self, interaction: discord.Interaction):
         from utils.database import get_trade
-        from ui.embeds import GAME_NAMES
         
         trade = await get_trade(self.trade_id)
         if not trade:
@@ -758,20 +788,59 @@ class ViewItemsButton(Button):
         items_str = trade.get('requester_items', '[]')
         items = json.loads(items_str) if items_str else []
         
-        embed = discord.Embed(title=f"Items in Trade #{self.trade_id}", color=0x9B59B6)
-        embed.add_field(name="Game", value=GAME_NAMES.get(trade['game'], trade['game']), inline=True)
+        game = trade.get('game', 'unknown')
+        color = GAME_COLORS.get(game, 0x9B59B6)
         
+        embed = discord.Embed(
+            title=f"📦 Trade #{self.trade_id} - Item Details",
+            color=color
+        )
+        embed.add_field(name="🎮 Game", value=GAME_NAMES.get(game, game), inline=True)
+        
+        total_value = 0
         if items:
-            for item in items[:10]:
+            items_text = []
+            for item in items[:15]:
                 rarity = item.get('rarity', 'Common')
-                embed.add_field(name=item['name'], value=f"Rarity: {rarity}", inline=True)
+                value = item.get('value', 0)
+                total_value += value
+                emoji = RARITY_EMOJIS.get(rarity, '⚪')
+                qty = item.get('quantity', 1)
+                
+                line = f"{emoji} **{item['name']}**"
+                if qty > 1:
+                    line += f" x{qty}"
+                if value > 0:
+                    line += f" `{format_value(value)}`"
+                line += f"\n   └ {rarity}"
+                items_text.append(line)
+            
+            if len(items) > 15:
+                items_text.append(f"\n*... and {len(items) - 15} more items*")
+            
+            embed.add_field(name="🎁 Items Offered", value="\n".join(items_text), inline=False)
+        else:
+            embed.add_field(name="🎁 Items Offered", value="*No items specified*", inline=False)
+        
+        offering_gems = trade.get('offering_gems', 0)
+        if offering_gems and offering_gems > 0:
+            embed.add_field(name=f"{DIAMONDS_EMOJI} Diamonds Offered", value=f"**{format_value(offering_gems)}**", inline=True)
+            total_value += offering_gems
+        
+        if total_value > 0:
+            embed.add_field(name="💰 Total Value", value=f"**{format_value(total_value)}**", inline=True)
+        
+        embed.set_footer(text=f"Trade ID: #{self.trade_id} | Click 'I'm Interested!' to trade")
+        
+        if items and items[0].get('icon_url'):
+            embed.set_thumbnail(url=items[0]['icon_url'])
         
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 class TraderProfileButton(Button):
     def __init__(self, trade_id: int, requester_id: int):
-        super().__init__(label="Trader Profile", style=discord.ButtonStyle.secondary, emoji="👤", custom_id=f"announce:profile:{trade_id}", row=0)
+        super().__init__(label="Trader Profile", style=discord.ButtonStyle.secondary, emoji="👤", custom_id=f"announce:profile:{trade_id}", row=1)
         self.trade_id = trade_id
         self.requester_id = requester_id
     
@@ -781,16 +850,73 @@ class TraderProfileButton(Button):
         user = await interaction.client.fetch_user(self.requester_id)
         user_data = await get_user(self.requester_id)
         
-        embed = discord.Embed(title=f"{user.display_name}'s Profile", color=0x3498DB)
-        embed.set_thumbnail(url=user.display_avatar.url)
+        tier_emojis = {"Bronze": "🥉", "Silver": "🥈", "Gold": "🥇", "Platinum": "💎", "Diamond": "👑"}
         
         if user_data:
-            embed.add_field(name="Trust", value=f"{user_data.get('trust_score', 50):.0f}/100", inline=True)
-            embed.add_field(name="Trades", value=str(user_data.get('total_trades', 0)), inline=True)
+            trust_score = user_data.get('trust_score', 50)
+            tier = user_data.get('trust_tier', 'Bronze')
+            tier_emoji = tier_emojis.get(tier, '🔰')
+            
+            if trust_score >= 80:
+                color = 0x2ECC71
+            elif trust_score >= 60:
+                color = 0xF39C12
+            else:
+                color = 0xE74C3C
+            
+            embed = discord.Embed(
+                title=f"{tier_emoji} {user.display_name}'s Trading Profile",
+                color=color
+            )
+            embed.set_thumbnail(url=user.display_avatar.url)
+            
+            trust_bar = self._create_progress_bar(trust_score)
+            embed.add_field(
+                name="🛡️ Trust Score",
+                value=f"{trust_bar} **{trust_score:.0f}/100**\nTier: {tier_emoji} {tier}",
+                inline=False
+            )
+            
+            total_trades = user_data.get('total_trades', 0)
+            successful = user_data.get('successful_trades', 0)
+            disputed = user_data.get('disputed_trades', 0)
+            success_rate = (successful / total_trades * 100) if total_trades > 0 else 0
+            
+            embed.add_field(name="📊 Total Trades", value=f"**{total_trades}**", inline=True)
+            embed.add_field(name="✅ Successful", value=f"**{successful}**", inline=True)
+            embed.add_field(name="📈 Success Rate", value=f"**{success_rate:.1f}%**", inline=True)
+            
+            if disputed > 0:
+                embed.add_field(name="⚠️ Disputed", value=f"**{disputed}**", inline=True)
+            
+            roblox_user = user_data.get('roblox_username')
+            if roblox_user:
+                embed.add_field(name="🎮 Roblox", value=f"`{roblox_user}`", inline=True)
+            
+            embed.set_footer(text=f"Member since {user.created_at.strftime('%B %Y')}")
         else:
-            embed.description = "New trader with no history."
+            embed = discord.Embed(
+                title=f"🆕 {user.display_name}'s Trading Profile",
+                description="This is a new trader with no trading history yet.\nBe cautious when trading with new accounts!",
+                color=0x95A5A6
+            )
+            embed.set_thumbnail(url=user.display_avatar.url)
+            embed.add_field(name="🛡️ Trust Score", value="**50/100** (Default)", inline=True)
+            embed.add_field(name="📊 Total Trades", value="**0**", inline=True)
+            embed.set_footer(text=f"Account created {user.created_at.strftime('%B %Y')}")
         
         await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    def _create_progress_bar(self, value: float, max_val: float = 100, length: int = 10) -> str:
+        filled = int((value / max_val) * length)
+        empty = length - filled
+        if value >= 80:
+            filled_char = "🟩"
+        elif value >= 60:
+            filled_char = "🟨"
+        else:
+            filled_char = "🟥"
+        return filled_char * filled + "⬜" * empty
 
 
 class ShareAnnouncementButton(Button):
@@ -799,7 +925,56 @@ class ShareAnnouncementButton(Button):
         self.trade_id = trade_id
     
     async def callback(self, interaction: discord.Interaction):
-        await interaction.response.send_message(f"Share: Trade #{self.trade_id} - Use `/trade view {self.trade_id}`", ephemeral=True)
+        from utils.database import get_trade
+        
+        trade = await get_trade(self.trade_id)
+        if not trade:
+            await interaction.response.send_message("Trade not found.", ephemeral=True)
+            return
+        
+        items_str = trade.get('requester_items', '[]')
+        items = json.loads(items_str) if items_str else []
+        game_name = GAME_NAMES.get(trade['game'], trade['game'])
+        
+        items_preview = ", ".join([item['name'] for item in items[:3]])
+        if len(items) > 3:
+            items_preview += f" +{len(items) - 3} more"
+        
+        share_embed = discord.Embed(
+            title="📤 Share This Trade",
+            description="Copy the text below to share this trade:",
+            color=0x3498DB
+        )
+        
+        share_text = f"🔔 Check out Trade #{self.trade_id}!\n"
+        share_text += f"🎮 Game: {game_name}\n"
+        if items_preview:
+            share_text += f"📦 Items: {items_preview}\n"
+        share_text += f"➡️ Use `/trade view {self.trade_id}` to see details!"
+        
+        share_embed.add_field(name="Share Text", value=f"```\n{share_text}\n```", inline=False)
+        share_embed.set_footer(text="Paste this anywhere to share the trade!")
+        
+        await interaction.response.send_message(embed=share_embed, ephemeral=True)
+
+
+class BookmarkAnnouncementButton(Button):
+    def __init__(self, trade_id: int):
+        super().__init__(label="Save", style=discord.ButtonStyle.secondary, emoji="🔖", custom_id=f"announce:bookmark:{trade_id}", row=1)
+        self.trade_id = trade_id
+    
+    async def callback(self, interaction: discord.Interaction):
+        embed = discord.Embed(
+            title="🔖 Trade Saved!",
+            description=f"Trade #{self.trade_id} has been bookmarked.",
+            color=0x9B59B6
+        )
+        embed.add_field(
+            name="📌 Quick Access",
+            value=f"Use `/trade view {self.trade_id}` anytime to see this trade.",
+            inline=False
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 class ConfirmCancelView(View):

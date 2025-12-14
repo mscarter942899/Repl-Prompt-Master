@@ -19,6 +19,7 @@ from ui.embeds import TradeEmbed, GAME_NAMES, GAME_COLORS
 from ui.views import TradeView, HandoffView, ConfirmView, GameSelectView, DynamicTradeView, DynamicAnnouncementView
 from ui.modals import TradeModal
 from ui.trade_builder import TradeBuilderView, format_value, RARITY_EMOJIS
+from ui.constants import DIAMONDS_EMOJI
 
 class TradingCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
@@ -212,7 +213,7 @@ class TradingCog(commands.Cog):
             offering_lines.append(line)
         
         if offering_gems > 0:
-            offering_lines.append(f"💎 **{format_value(offering_gems)} Diamonds**")
+            offering_lines.append(f"{DIAMONDS_EMOJI} **{format_value(offering_gems)} Diamonds**")
             total_offering += offering_gems
         
         if offering_lines:
@@ -237,7 +238,7 @@ class TradingCog(commands.Cog):
             requesting_lines.append(line)
         
         if requesting_gems > 0:
-            requesting_lines.append(f"💎 **{format_value(requesting_gems)} Diamonds**")
+            requesting_lines.append(f"{DIAMONDS_EMOJI} **{format_value(requesting_gems)} Diamonds**")
             total_requesting += requesting_gems
         
         if requesting_lines:
@@ -275,26 +276,41 @@ class TradingCog(commands.Cog):
     
     def _create_announcement_embed(self, trade: dict, user, 
                                     game: str, offering_gems: int) -> discord.Embed:
+        game_emojis = {'ps99': '🐾', 'gag': '🌱', 'am': '🏠', 'bf': '🍎', 'sab': '🧠'}
+        game_emoji = game_emojis.get(game, '🎮')
+        
         embed = discord.Embed(
-            title="🔔 New Trade Available!",
-            color=GAME_COLORS.get(game, 0x2ECC71),
-            description=f"{user.mention} is looking to trade!"
+            title=f"🔔 New Trade Available!",
+            color=GAME_COLORS.get(game, 0x9B59B6)
         )
-        embed.add_field(name="Trade ID", value=f"#{trade['id']}", inline=True)
-        embed.add_field(name="Game", value=GAME_NAMES.get(game, game), inline=True)
+        embed.description = f"**{user.mention}** is looking to trade!"
+        
+        embed.add_field(name="📋 Trade ID", value=f"**#{trade['id']}**", inline=True)
+        embed.add_field(name=f"{game_emoji} Game", value=f"**{GAME_NAMES.get(game, game)}**", inline=True)
         
         items = json.loads(trade.get('requester_items', '[]') or '[]')
+        total_value = 0
+        
         if items:
             items_preview = []
-            for item in items[:5]:
+            for item in items[:6]:
                 emoji = RARITY_EMOJIS.get(item.get('rarity', 'Common'), '⚪')
-                items_preview.append(f"{emoji} {item['name']}")
-            if len(items) > 5:
-                items_preview.append(f"... +{len(items) - 5} more")
-            embed.add_field(name="Items Offered", value="\n".join(items_preview), inline=False)
+                value = item.get('value', 0)
+                total_value += value
+                line = f"{emoji} **{item['name']}**"
+                if value > 0:
+                    line += f" `{format_value(value)}`"
+                items_preview.append(line)
+            if len(items) > 6:
+                items_preview.append(f"*+{len(items) - 6} more items*")
+            embed.add_field(name="🎁 Items Offered", value="\n".join(items_preview), inline=False)
         
         if offering_gems > 0:
-            embed.add_field(name="💎 Diamonds", value=format_value(offering_gems), inline=True)
+            embed.add_field(name=f"{DIAMONDS_EMOJI} Diamonds", value=f"**{format_value(offering_gems)}**", inline=True)
+            total_value += offering_gems
+        
+        if total_value > 0:
+            embed.add_field(name="💰 Total Value", value=f"**{format_value(total_value)}**", inline=True)
         
         first_item_icon = None
         if items:

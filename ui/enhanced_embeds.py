@@ -5,6 +5,7 @@ import json
 
 from ui.embeds import GAME_COLORS, GAME_NAMES, TIER_EMOJIS
 from ui.trade_builder import RARITY_EMOJIS, format_value
+from ui.constants import DIAMONDS_EMOJI
 
 
 class EnhancedTradeEmbed:
@@ -56,7 +57,7 @@ class EnhancedTradeEmbed:
         
         offering_gems = trade.get('offering_gems', 0)
         if offering_gems > 0:
-            offering_lines.append(f"💎 **{format_value(offering_gems)} Diamonds**")
+            offering_lines.append(f"{DIAMONDS_EMOJI} **{format_value(offering_gems)} Diamonds**")
             total_offering += offering_gems
         
         if offering_lines:
@@ -98,7 +99,7 @@ class EnhancedTradeEmbed:
         
         requesting_gems = trade.get('requesting_gems', 0)
         if requesting_gems > 0:
-            requesting_lines.append(f"💎 **{format_value(requesting_gems)} Diamonds**")
+            requesting_lines.append(f"{DIAMONDS_EMOJI} **{format_value(requesting_gems)} Diamonds**")
             total_requesting += requesting_gems
         
         if requesting_lines:
@@ -210,7 +211,7 @@ class EnhancedTradeEmbed:
         
         offering_gems = trade.get('offering_gems', 0)
         if offering_gems > 0:
-            req_summary.append(f"💎 {format_value(offering_gems)}")
+            req_summary.append(f"{DIAMONDS_EMOJI} {format_value(offering_gems)}")
         
         if len(req_items) > 5:
             req_summary.append(f"*+{len(req_items) - 5} more*")
@@ -223,7 +224,7 @@ class EnhancedTradeEmbed:
         
         requesting_gems = trade.get('requesting_gems', 0)
         if requesting_gems > 0:
-            tgt_summary.append(f"💎 {format_value(requesting_gems)}")
+            tgt_summary.append(f"{DIAMONDS_EMOJI} {format_value(requesting_gems)}")
         
         if len(tgt_items) > 5:
             tgt_summary.append(f"*+{len(tgt_items) - 5} more*")
@@ -369,7 +370,7 @@ class LFFTEmbed:
         if gems > 0:
             gem_action = "Offering" if post_type == 'ft' else "Want"
             embed.add_field(
-                name=f"💎 {gem_action}",
+                name=f"{DIAMONDS_EMOJI} {gem_action}",
                 value=f"**{format_value(gems)}** Diamonds",
                 inline=True
             )
