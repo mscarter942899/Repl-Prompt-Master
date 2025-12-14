@@ -1,7 +1,10 @@
 import discord
 from discord.ui import View, Button, Select, Modal, TextInput
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, TYPE_CHECKING, cast
 import json
+
+if TYPE_CHECKING:
+    from typing import Union
 
 
 RARITY_EMOJIS = {
@@ -240,6 +243,8 @@ class TradeBuilderView(View):
 
 
 class BrowseItemsButton(Button):
+    view: "TradeBuilderView"
+    
     def __init__(self, side: str):
         self.side = side
         emoji = "📦" if side == "offering" else "🎯"
@@ -277,6 +282,8 @@ class BrowseItemsButton(Button):
 
 
 class QuickAddButton(Button):
+    view: "TradeBuilderView"
+    
     def __init__(self, side: str):
         self.side = side
         emoji = "➕" if side == "offering" else "🔍"
@@ -304,6 +311,8 @@ class QuickAddButton(Button):
 
 
 class GemsButton(Button):
+    view: "TradeBuilderView"
+    
     def __init__(self, side: str, current_amount: int):
         self.side = side
         label = f"💎 Offer Gems" if side == "offering" else f"💎 Request Gems"
@@ -333,6 +342,8 @@ class GemsButton(Button):
 
 
 class ManageItemsButton(Button):
+    view: "TradeBuilderView"
+    
     def __init__(self, side: str, count: int):
         self.side = side
         label = f"Manage Offer ({count})" if side == "offering" else f"Manage Wants ({count})"
@@ -362,6 +373,8 @@ class ManageItemsButton(Button):
 
 
 class NotesButton(Button):
+    view: "TradeBuilderView"
+    
     def __init__(self, has_notes: bool):
         label = "📝 Notes" if not has_notes else "📝 Edit Notes"
         super().__init__(label=label, emoji="📝", style=discord.ButtonStyle.secondary, row=3)
@@ -382,6 +395,8 @@ class NotesButton(Button):
 
 
 class PreviewButton(Button):
+    view: "TradeBuilderView"
+    
     def __init__(self):
         super().__init__(label="Preview", emoji="👁️", style=discord.ButtonStyle.secondary, row=3)
     
@@ -399,6 +414,8 @@ class PreviewButton(Button):
 
 
 class ConfirmButton(Button):
+    view: "TradeBuilderView"
+    
     def __init__(self):
         super().__init__(label="Confirm Trade", emoji="✅", style=discord.ButtonStyle.success, row=4)
     
@@ -420,6 +437,8 @@ class ConfirmButton(Button):
 
 
 class CancelButton(Button):
+    view: "TradeBuilderView"
+    
     def __init__(self):
         super().__init__(label="Cancel", emoji="❌", style=discord.ButtonStyle.danger, row=4)
     
