@@ -158,3 +158,22 @@ Items stored in the database have the following fields:
   - Added `/manage` command group for item CRUD operations
   - Items now stored and managed entirely in the database
   - Owner can easily add, update values, and set images for items
+
+- **Dec 2024**: Added Trade Ticket System
+  - When a trade is accepted, a private thread is created for the traders
+  - Both traders are automatically added and pinged in the thread
+  - Thread includes 8 interactive buttons:
+    - Share Roblox Username (modal with profile link)
+    - Confirm Trade Complete (both must confirm)
+    - Safety Checklist (before/during/after checklist)
+    - View Trade Items (shows all items and values)
+    - Upload Proof (instructions for screenshots)
+    - Invite Moderator (pings mod role)
+    - Report Issue (flags trade as disputed)
+    - Close Ticket (archives the thread)
+  - Threads auto-archive after trade completion
+  - Server admins can now use `/manage` commands (not just bot owner)
+
+- **Dec 2024**: GitHub & Railway Deployment Ready
+  - Added README.md, requirements.txt, LICENSE, Procfile, runtime.txt, railway.json
+  - Bot runs on Railway 24/7 without keep_alive server
