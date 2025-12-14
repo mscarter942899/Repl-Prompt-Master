@@ -56,8 +56,54 @@ class TradeEmbed:
             except:
                 req_items = []
         
-        items_text = '\n'.join([f"• {item.get('name', item) if isinstance(item, dict) else item}" for item in req_items]) or "No items"
+        rarity_emoji = {
+            'Common': '⚪',
+            'Uncommon': '🟢',
+            'Rare': '🔵',
+            'Epic': '🟣',
+            'Legendary': '🟡',
+            'Mythic': '🔴',
+            'Titanic': '⭐',
+            'Huge': '💫',
+            'Divine': '✨',
+            'Secret': '🔮'
+        }
+        
+        items_text_lines = []
+        first_icon_url = None
+        total_value = 0
+        
+        for item in req_items:
+            if isinstance(item, dict):
+                name = item.get('name', 'Unknown')
+                rarity = item.get('rarity', '')
+                value = item.get('value', 0)
+                icon = item.get('icon_url', '')
+                
+                emoji = rarity_emoji.get(rarity, '⚪')
+                line = f"{emoji} **{name}**"
+                if value and value > 0:
+                    total_value += value
+                    if value >= 1_000_000_000:
+                        line += f" ({value/1_000_000_000:.1f}B)"
+                    elif value >= 1_000_000:
+                        line += f" ({value/1_000_000:.1f}M)"
+                    elif value >= 1_000:
+                        line += f" ({value/1_000:.1f}K)"
+                    else:
+                        line += f" ({value:,.0f})"
+                items_text_lines.append(line)
+                
+                if not first_icon_url and icon:
+                    first_icon_url = icon
+            else:
+                items_text_lines.append(f"• {item}")
+        
+        items_text = '\n'.join(items_text_lines) if items_text_lines else "No items"
         embed.add_field(name="📦 Offering", value=items_text, inline=True)
+        
+        if first_icon_url:
+            embed.set_thumbnail(url=first_icon_url)
         
         tgt_items = trade.get('target_items', '[]')
         if isinstance(tgt_items, str):
@@ -68,8 +114,28 @@ class TradeEmbed:
                 tgt_items = []
         
         if tgt_items:
-            items_text = '\n'.join([f"• {item.get('name', item) if isinstance(item, dict) else item}" for item in tgt_items])
+            tgt_text_lines = []
+            for item in tgt_items:
+                if isinstance(item, dict):
+                    name = item.get('name', 'Unknown')
+                    rarity = item.get('rarity', '')
+                    emoji = rarity_emoji.get(rarity, '⚪')
+                    tgt_text_lines.append(f"{emoji} **{name}**")
+                else:
+                    tgt_text_lines.append(f"• {item}")
+            items_text = '\n'.join(tgt_text_lines)
             embed.add_field(name="🎯 Requesting", value=items_text, inline=True)
+        
+        if total_value > 0:
+            if total_value >= 1_000_000_000:
+                value_str = f"{total_value/1_000_000_000:.2f}B"
+            elif total_value >= 1_000_000:
+                value_str = f"{total_value/1_000_000:.2f}M"
+            elif total_value >= 1_000:
+                value_str = f"{total_value/1_000:.2f}K"
+            else:
+                value_str = f"{total_value:,.0f}"
+            embed.add_field(name="💰 Total Value", value=value_str, inline=True)
         
         status_emoji = {
             'draft': '📝',

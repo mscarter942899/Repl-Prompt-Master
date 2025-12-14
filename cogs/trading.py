@@ -103,7 +103,13 @@ class TradingCog(commands.Cog):
         trade_id = await create_trade(
             requester_id=interaction.user.id,
             game=game,
-            requester_items=json.dumps([{'id': i['id'], 'name': i['name']} for i in resolved_items])
+            requester_items=json.dumps([{
+                'id': i['id'], 
+                'name': i['name'],
+                'rarity': i.get('rarity', 'Common'),
+                'value': i.get('value', 0),
+                'icon_url': i.get('icon_url', '')
+            } for i in resolved_items])
         )
         
         if target:
