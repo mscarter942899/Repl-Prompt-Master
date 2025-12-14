@@ -53,13 +53,20 @@ A production-grade Discord bot for secure Roblox trading coordination across mul
 6. **Immutable Receipts**: SHA-256 hashed trade records
 
 ### Item Management Commands (Owner Only)
-- `/manage add` - Add a new item with name, value, rarity, and image
-- `/manage update` - Update an existing item's details
+- `/manage add` - Add a new item with name, value, rarity, and image (supports file uploads!)
+- `/manage update` - Update an existing item's details (supports file uploads!)
 - `/manage setvalue` - Quickly update an item's value
-- `/manage setimage` - Set or update an item's image URL
+- `/manage setimage` - Set or update an item's image (supports file uploads!)
 - `/manage delete` - Remove an item from the database
 - `/manage list` - View all items for a game (paginated)
 - `/manage bulkvalue` - Update multiple item values at once (JSON format)
+
+### Image Upload Support
+You can upload images directly from your device when managing items:
+- Supported formats: PNG, JPEG, GIF, WebP
+- Maximum file size: 8MB
+- Simply attach an image when using `/manage add`, `/manage update`, or `/manage setimage`
+- You can also still use image URLs if preferred
 
 ### Slash Commands
 - `/trade create` - Create a trade offer
@@ -122,6 +129,13 @@ Items stored in the database have the following fields:
 - Handoff buttons: "I traded in-game", "Something went wrong", "Upload Proof"
 
 ## Recent Changes
+- **Dec 2024**: Added direct image upload support
+  - All item management commands now support uploading images directly from your device
+  - Simply attach an image when using `/manage add`, `/manage update`, or `/manage setimage`
+  - Supports PNG, JPEG, GIF, and WebP formats (max 8MB)
+  - Image validation ensures only valid image files are accepted
+  - Can still use image URLs as an alternative to uploading
+
 - **Dec 2024**: Added trade announcement channel and enhanced buttons
   - New `/settings tradechannel` command for admins to set where trades are announced
   - Trade buttons now include: Accept, Decline, Counter, Negotiate, View Details, View Profile, Message, Share, Bookmark, Report, Help
