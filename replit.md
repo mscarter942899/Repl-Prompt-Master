@@ -23,14 +23,9 @@ A production-grade Discord bot for secure Roblox trading coordination across mul
 │   ├── auctions.py      # Auction system
 │   ├── moderation.py    # Mod tools
 │   ├── analytics.py     # Statistics
-│   └── owner.py         # Bot owner commands
-├── api/                 # Game API adapters
-│   ├── base.py          # Abstract adapter interface
-│   ├── ps99.py          # Pet Simulator 99 API
-│   ├── gag.py           # Grow a Garden API
-│   ├── am.py            # Adopt Me API
-│   ├── bf.py            # Blox Fruits API
-│   └── sab.py           # Steal a Brainrot API
+│   ├── owner.py         # Bot owner commands
+│   └── item_manage.py   # Manual item management (owner only)
+├── api/                 # Game API adapters (legacy, not used)
 ├── ui/                  # Discord UI components
 │   ├── embeds.py        # Message embeds
 │   ├── views.py         # Button/select views
@@ -39,22 +34,32 @@ A production-grade Discord bot for secure Roblox trading coordination across mul
 │   ├── database.py      # SQLite database operations
 │   ├── cache.py         # Caching system
 │   ├── fuzzy.py         # Fuzzy string matching
-│   ├── resolver.py      # Item resolution pipeline
+│   ├── resolver.py      # Item resolution (database-backed)
 │   ├── validators.py    # Input validation
 │   ├── rate_limit.py    # Rate limiting
 │   └── trust_engine.py  # Trust scoring system
-├── data/                # Fallback item data
-│   └── fallback_*.json  # Per-game fallback data
+├── data/                # Database storage
+│   └── trading_bot.db   # SQLite database
 └── locales/             # Internationalization
     └── en.json          # English strings
 ```
 
 ### Key Features
-1. **Trade Lifecycle**: draft → pending → accepted → locked → trust_check → in_game_trade → verification → completed
-2. **Trust Engine**: Calculates trust scores based on account age, trade history, disputes
-3. **Item Resolution**: API lookup → Alias match → Fuzzy match (Levenshtein ≤ 2)
-4. **Anti-Scam**: Detects lowball spam, pressure tactics, bait-and-switch
-5. **Immutable Receipts**: SHA-256 hashed trade records
+1. **Manual Item Management**: Full control over items via Discord commands (no scrapers)
+2. **Trade Lifecycle**: draft → pending → accepted → locked → trust_check → in_game_trade → verification → completed
+3. **Trust Engine**: Calculates trust scores based on account age, trade history, disputes
+4. **Item Resolution**: Database lookup → Alias match → Fuzzy match (Levenshtein ≤ 2)
+5. **Anti-Scam**: Detects lowball spam, pressure tactics, bait-and-switch
+6. **Immutable Receipts**: SHA-256 hashed trade records
+
+### Item Management Commands (Owner Only)
+- `/manage add` - Add a new item with name, value, rarity, and image
+- `/manage update` - Update an existing item's details
+- `/manage setvalue` - Quickly update an item's value
+- `/manage setimage` - Set or update an item's image URL
+- `/manage delete` - Remove an item from the database
+- `/manage list` - View all items for a game (paginated)
+- `/manage bulkvalue` - Update multiple item values at once (JSON format)
 
 ### Slash Commands
 - `/trade create` - Create a trade offer
@@ -88,6 +93,7 @@ A production-grade Discord bot for secure Roblox trading coordination across mul
 1. Set `DISCORD_TOKEN` in Secrets
 2. Bot will auto-initialize database on startup
 3. Commands sync automatically
+4. Use `/manage add` commands to populate items
 
 ## Tech Stack
 - Python 3.11
@@ -96,18 +102,16 @@ A production-grade Discord bot for secure Roblox trading coordination across mul
 - aiosqlite for database
 - Flask for keep-alive server
 - python-Levenshtein for fuzzy matching
-- BeautifulSoup/lxml for web scraping
 
-## Web Scraper Features
-The scraper (`utils/scraper.py`) is designed to work with various website layouts:
-- **Multi-page support**: Automatically follows pagination links (up to 10 pages by default)
-- **Flexible value extraction**: Detects values from data attributes, class-based elements, and text patterns
-- **Multiple layout support**: Handles card layouts, tables, and list-based sites
-- **Value formats**: Recognizes values with K/M/B/T multipliers, commas, labels (Value:, Price:, etc.)
-- **Rate limiting**: 0.5 second delay between page requests to avoid overwhelming sites
-- **Enhanced image extraction**: Supports lazy-loaded images (data-src, data-lazy-src, data-original), srcset, picture elements, and CSS background images
-- **Comprehensive selectors**: Uses 20+ CSS selectors to find item cards including data attributes, class patterns, and structural detection
-- **Smart name extraction**: Prioritizes data attributes, heading tags, image alt text, and structured text
+## Item Data Model
+Items stored in the database have the following fields:
+- `game` - Game identifier (ps99, gag, am, bf, sab)
+- `item_id` - Unique item identifier
+- `name` - Display name
+- `value` - Item's worth/value
+- `rarity` - Rarity tier (Common, Rare, Legendary, etc.)
+- `icon_url` - Image URL for the item
+- `tradeable` - Whether the item can be traded
 
 ## Trade Features
 - Trade offers display item thumbnails (first item image)
@@ -116,3 +120,10 @@ The scraper (`utils/scraper.py`) is designed to work with various website layout
 - Total trade value calculated automatically
 - Interactive buttons: Accept, Decline, Counter Offer
 - Handoff buttons: "I traded in-game", "Something went wrong", "Upload Proof"
+
+## Recent Changes
+- **Dec 2024**: Converted from scraper-based to fully manual item management
+  - Removed dependency on external websites for item data
+  - Added `/manage` command group for item CRUD operations
+  - Items now stored and managed entirely in the database
+  - Owner can easily add, update values, and set images for items
