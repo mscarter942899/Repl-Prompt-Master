@@ -1,4 +1,4 @@
-from typing import List, Dict, Optional, Tuple, Set
+from typing import List, Dict, Optional, Tuple, Set, Union
 from bs4 import BeautifulSoup
 import aiohttp
 import re
@@ -229,7 +229,7 @@ class WebScraper:
             return None
     
     @staticmethod
-    def extract_items_generic(html: str, base_url: str, game_name: str, rarity_list: List[str] = None) -> List[Dict]:
+    def extract_items_generic(html: str, base_url: str, game_name: str, rarity_list: Optional[List[str]] = None) -> List[Dict]:
         if rarity_list is None:
             rarity_list = ['Mythic', 'Legendary', 'Epic', 'Rare', 'Uncommon', 'Common']
         
@@ -366,7 +366,7 @@ class WebScraper:
         return items
     
     @staticmethod
-    def extract_items_table(html: str, base_url: str, game_name: str, rarity_list: List[str] = None) -> List[Dict]:
+    def extract_items_table(html: str, base_url: str, game_name: str, rarity_list: Optional[List[str]] = None) -> List[Dict]:
         if rarity_list is None:
             rarity_list = ['Mythic', 'Legendary', 'Epic', 'Rare', 'Uncommon', 'Common']
         
@@ -389,9 +389,9 @@ class WebScraper:
                     value = 0.0
                     
                     for attr in ['data-name', 'data-item', 'data-pet', 'title']:
-                        val = row.get(attr, '').strip()
-                        if val and len(val) < 100:
-                            name = val
+                        val = row.get(attr, '')
+                        if val and isinstance(val, str) and len(val) < 100:
+                            name = val.strip()
                             break
                     
                     for cell in cells:
@@ -401,7 +401,9 @@ class WebScraper:
                         if not name:
                             img = cell.find('img')
                             if img:
-                                name = img.get('alt', '').strip() or img.get('title', '').strip()
+                                alt_val = img.get('alt', '')
+                                title_val = img.get('title', '')
+                                name = (alt_val.strip() if isinstance(alt_val, str) else '') or (title_val.strip() if isinstance(title_val, str) else '')
                         
                         if not name:
                             cell_text = cell.get_text(strip=True)
@@ -443,7 +445,7 @@ class WebScraper:
         return items
     
     @staticmethod
-    def extract_items_list(html: str, base_url: str, game_name: str, rarity_list: List[str] = None) -> List[Dict]:
+    def extract_items_list(html: str, base_url: str, game_name: str, rarity_list: Optional[List[str]] = None) -> List[Dict]:
         if rarity_list is None:
             rarity_list = ['Mythic', 'Legendary', 'Epic', 'Rare', 'Uncommon', 'Common']
         
@@ -459,9 +461,9 @@ class WebScraper:
                 value = 0.0
                 
                 for attr in ['data-name', 'data-item', 'data-pet', 'title']:
-                    val = li.get(attr, '').strip()
-                    if val and len(val) < 100:
-                        name = val
+                    val = li.get(attr, '')
+                    if val and isinstance(val, str) and len(val) < 100:
+                        name = val.strip()
                         break
                 
                 icon_url = WebScraper.find_image_in_card(li, base_url)
@@ -469,7 +471,9 @@ class WebScraper:
                 if not name:
                     img = li.find('img')
                     if img:
-                        name = img.get('alt', '').strip() or img.get('title', '').strip()
+                        alt_val = img.get('alt', '')
+                        title_val = img.get('title', '')
+                        name = (alt_val.strip() if isinstance(alt_val, str) else '') or (title_val.strip() if isinstance(title_val, str) else '')
                 
                 if not name:
                     for tag in ['h3', 'h4', 'h5', 'strong', 'b', 'span', 'a']:
@@ -584,7 +588,7 @@ class WebScraper:
     @staticmethod
     async def scrape_single_page(session: aiohttp.ClientSession, url: str, 
                                   game_name: str, base_url: str, 
-                                  rarity_list: List[str] = None) -> Tuple[List[Dict], List[str]]:
+                                  rarity_list: Optional[List[str]] = None) -> Tuple[List[Dict], List[str]]:
         html = await WebScraper.fetch_html(session, url)
         if not html:
             return [], []
@@ -603,7 +607,7 @@ class WebScraper:
     
     @staticmethod
     async def scrape_items(session: aiohttp.ClientSession, url: str, game_name: str, 
-                          rarity_list: List[str] = None, base_url: str = None,
+                          rarity_list: Optional[List[str]] = None, base_url: Optional[str] = None,
                           max_pages: int = 10) -> List[Dict]:
         if base_url is None:
             parsed = urlparse(url)

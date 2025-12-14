@@ -49,7 +49,7 @@ class TradingCog(commands.Cog):
         if not user:
             user = await create_user(interaction.user.id, str(interaction.user.created_at))
         
-        if user.get('is_banned'):
+        if user and user.get('is_banned'):
             await interaction.response.send_message("You are banned from trading.", ephemeral=True)
             return
         
@@ -112,6 +112,10 @@ class TradingCog(commands.Cog):
             } for i in resolved_items])
         )
         
+        if trade_id is None:
+            await interaction.followup.send("Failed to create trade.", ephemeral=True)
+            return
+        
         if target:
             await update_trade(trade_id, target_id=target.id, status='pending')
         
@@ -119,7 +123,12 @@ class TradingCog(commands.Cog):
         await log_audit('trade_created', interaction.user.id, target.id if target else None, f"Trade {trade_id}")
         
         trade = await get_trade(trade_id)
-        embed = TradeEmbed.create_trade_offer(trade, interaction.user, target)
+        if not trade:
+            await interaction.followup.send("Failed to retrieve trade.", ephemeral=True)
+            return
+        
+        requester_user = interaction.user if isinstance(interaction.user, discord.User) else await self.bot.fetch_user(interaction.user.id)
+        embed = TradeEmbed.create_trade_offer(trade, requester_user, target)
         
         if target:
             view = TradeView(trade_id, interaction.user.id, target.id)
@@ -148,6 +157,9 @@ class TradingCog(commands.Cog):
     
     async def _process_trade_acceptance(self, interaction: discord.Interaction, trade_id: int, target: discord.User):
         trade = await get_trade(trade_id)
+        if not trade:
+            await interaction.followup.send("Trade not found.", ephemeral=True)
+            return
         
         await update_trade(trade_id, status='trust_check')
         await add_trade_history(trade_id, 'accepted', target.id)
@@ -158,9 +170,17 @@ class TradingCog(commands.Cog):
         if not target_data:
             target_data = await create_user(target.id, str(target.created_at))
         
+        if not requester_data:
+            requester_data = {'trust_score': 50.0, 'total_trades': 0, 'disputed_trades': 0}
+        if not target_data:
+            target_data = {'trust_score': 50.0, 'total_trades': 0, 'disputed_trades': 0}
+        
+        requester_items_str = trade.get('requester_items', '[]')
+        requester_items = json.loads(requester_items_str) if requester_items_str else []
+        
         requester_value = await item_resolver.calculate_trade_value(
             trade['game'], 
-            [i['id'] for i in json.loads(trade['requester_items'])]
+            [i['id'] for i in requester_items]
         )
         
         trade_data = {

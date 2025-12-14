@@ -62,7 +62,8 @@ class RobloxTradingBot(commands.Bot):
             logger.error(f"Failed to sync commands: {e}")
     
     async def on_ready(self):
-        logger.info(f"Logged in as {self.user} (ID: {self.user.id})")
+        if self.user:
+            logger.info(f"Logged in as {self.user} (ID: {self.user.id})")
         logger.info(f"Connected to {len(self.guilds)} guilds")
         
         await self.change_presence(
