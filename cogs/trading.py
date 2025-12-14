@@ -10,13 +10,15 @@ from utils.database import (
     create_trade, update_trade, get_trade, get_user_trades,
     add_trade_history, log_audit, get_trade_channel, get_game_trade_channel
 )
+from utils.database_v2 import is_trader_blocked
 from utils.resolver import item_resolver
 from utils.trust_engine import trust_engine, RiskLevel
 from utils.validators import Validators
 from utils.rate_limit import rate_limiter, action_cooldown
-from ui.embeds import TradeEmbed, GAME_NAMES
+from ui.embeds import TradeEmbed, GAME_NAMES, GAME_COLORS
 from ui.views import TradeView, HandoffView, ConfirmView, GameSelectView, DynamicTradeView, DynamicAnnouncementView
 from ui.modals import TradeModal
+from ui.trade_builder import TradeBuilderView, format_value, RARITY_EMOJIS
 
 class TradingCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
@@ -24,7 +26,7 @@ class TradingCog(commands.Cog):
     
     trade_group = app_commands.Group(name="trade", description="Trading commands")
     
-    @trade_group.command(name="create", description="Create a new trade offer")
+    @trade_group.command(name="create", description="Create a new trade offer with visual item builder")
     @app_commands.describe(
         game="The game for this trade",
         target="The user you want to trade with (optional)"
@@ -61,64 +63,61 @@ class TradingCog(commands.Cog):
             await interaction.response.send_message("You cannot trade with bots.", ephemeral=True)
             return
         
-        modal = TradeModal(game)
-        await interaction.response.send_modal(modal)
+        if target:
+            if await is_trader_blocked(target.id, interaction.user.id):
+                await interaction.response.send_message("This user has blocked you from trading with them.", ephemeral=True)
+                return
+            if await is_trader_blocked(interaction.user.id, target.id):
+                await interaction.response.send_message("You have blocked this user. Unblock them first to trade.", ephemeral=True)
+                return
         
-        await modal.wait()
+        builder_view = TradeBuilderView(interaction.user.id, game, target.id if target else None)
+        embed = builder_view.get_summary_embed()
         
-        if not modal.trade_data:
+        await interaction.response.send_message(
+            embed=embed, 
+            view=builder_view, 
+            ephemeral=True
+        )
+        
+        await builder_view.wait()
+        
+        if builder_view.cancelled or not builder_view.completed:
             return
         
-        offering = modal.trade_data['offering']
-        if not offering:
-            await interaction.followup.send("You must offer at least one item.", ephemeral=True)
-            return
+        trade_data = builder_view.get_trade_data()
+        offering_items = trade_data['offering_items']
+        requesting_items = trade_data['requesting_items']
+        offering_gems = trade_data['offering_gems']
+        requesting_gems = trade_data['requesting_gems']
+        notes = trade_data['notes']
         
-        valid, error = Validators.validate_trade_items(offering)
-        if not valid:
-            await interaction.followup.send(f"Invalid trade: {error}", ephemeral=True)
-            return
-        
-        resolved_items = []
-        failed_items = []
-        
-        for item_name in offering:
-            item = await item_resolver.resolve_item(game, item_name)
-            if item:
-                resolved_items.append(item)
-            else:
-                suggestions = await item_resolver.suggest_items(game, item_name, limit=3)
-                if suggestions:
-                    failed_items.append(f"'{item_name}' - Did you mean: {', '.join([s['name'] for s in suggestions])}?")
-                else:
-                    failed_items.append(f"'{item_name}' - Not found in database")
-        
-        if failed_items:
-            await interaction.followup.send(
-                f"Could not resolve some items:\n" + "\n".join(failed_items),
-                ephemeral=True
-            )
+        if not offering_items and offering_gems == 0:
+            await interaction.followup.send("You must offer at least one item or some gems.", ephemeral=True)
             return
         
         trade_id = await create_trade(
             requester_id=interaction.user.id,
             game=game,
-            requester_items=json.dumps([{
-                'id': i['id'], 
-                'name': i['name'],
-                'rarity': i.get('rarity', 'Common'),
-                'value': i.get('value', 0),
-                'icon_url': i.get('icon_url', '')
-            } for i in resolved_items])
+            requester_items=json.dumps(offering_items),
+            target_items=json.dumps(requesting_items) if requesting_items else None
         )
         
         if trade_id is None:
             await interaction.followup.send("Failed to create trade.", ephemeral=True)
             return
         
+        update_kwargs = {
+            'offering_gems': offering_gems,
+            'requesting_gems': requesting_gems
+        }
+        if notes:
+            update_kwargs['notes'] = notes
         if target:
-            await update_trade(trade_id, target_id=target.id, status='pending')
+            update_kwargs['target_id'] = target.id
+            update_kwargs['status'] = 'pending'
         
+        await update_trade(trade_id, **update_kwargs)
         await add_trade_history(trade_id, 'created', interaction.user.id)
         await log_audit('trade_created', interaction.user.id, target.id if target else None, f"Trade {trade_id}")
         
@@ -127,20 +126,19 @@ class TradingCog(commands.Cog):
             await interaction.followup.send("Failed to retrieve trade.", ephemeral=True)
             return
         
-        requester_user = interaction.user if isinstance(interaction.user, discord.User) else await self.bot.fetch_user(interaction.user.id)
-        embed = TradeEmbed.create_trade_offer(trade, requester_user, target)
+        trade_embed = self._create_enhanced_trade_embed(trade, interaction.user, target)
         
         if target:
             view = DynamicTradeView(trade_id, interaction.user.id, target.id)
-            msg = await interaction.followup.send(
+            await interaction.followup.send(
                 content=f"{target.mention}, you have a trade offer!",
-                embed=embed,
+                embed=trade_embed,
                 view=view
             )
             
             await interaction.followup.send(
                 f"Trade #{trade_id} created and sent to {target.mention}! "
-                f"They can accept, decline, or negotiate using the buttons.",
+                f"They can accept, decline, counter-offer, or negotiate.",
                 ephemeral=True
             )
         else:
@@ -151,58 +149,152 @@ class TradingCog(commands.Cog):
                     if trade_channel and isinstance(trade_channel, discord.TextChannel):
                         announcement_view = DynamicAnnouncementView(trade_id, interaction.user.id, game)
                         
-                        announcement_embed = discord.Embed(
-                            title="New Trade Available!",
-                            color=0x2ECC71,
-                            description=f"{interaction.user.mention} is looking to trade!"
+                        announcement_embed = self._create_announcement_embed(
+                            trade, interaction.user, game, offering_gems
                         )
-                        announcement_embed.add_field(name="Trade ID", value=f"#{trade_id}", inline=True)
-                        announcement_embed.add_field(name="Game", value=GAME_NAMES.get(game, game), inline=True)
-                        
-                        items_str = trade.get('requester_items', '[]')
-                        items = json.loads(items_str) if items_str else []
-                        if items:
-                            items_preview = "\n".join([f"• {i['name']}" for i in items[:5]])
-                            if len(items) > 5:
-                                items_preview += f"\n... and {len(items) - 5} more items"
-                            announcement_embed.add_field(name="Items Offered", value=items_preview, inline=False)
-                        
-                        user_data = await get_user(interaction.user.id)
-                        if user_data:
-                            trust_tier = user_data.get('trust_tier', 'Bronze')
-                            tier_emoji = {"Bronze": "🥉", "Silver": "🥈", "Gold": "🥇", "Platinum": "💎", "Diamond": "💠"}.get(trust_tier, "🏅")
-                            announcement_embed.add_field(
-                                name="Trader Info",
-                                value=f"Trust: {user_data.get('trust_score', 50):.0f}/100 | {tier_emoji} {trust_tier}",
-                                inline=True
-                            )
-                        
-                        announcement_embed.set_thumbnail(url=interaction.user.display_avatar.url)
-                        announcement_embed.set_footer(text="Click the buttons below to interact with this trade!")
                         
                         await trade_channel.send(embed=announcement_embed, view=announcement_view)
                         
                         await interaction.followup.send(
-                            f"Trade #{trade_id} created and announced in {trade_channel.mention}! "
-                            f"Others can express interest using the buttons there.",
+                            f"Trade #{trade_id} created and announced in {trade_channel.mention}!",
                             ephemeral=True
                         )
                     else:
                         await interaction.followup.send(
-                            f"Trade #{trade_id} created! Share it with potential traders or use `/trade view {trade_id}`.",
-                            embed=embed
+                            f"Trade #{trade_id} created! Share it with potential traders.",
+                            embed=trade_embed
                         )
                 else:
                     await interaction.followup.send(
                         f"Trade #{trade_id} created! Share it with potential traders.\n"
-                        f"**Tip:** Ask a server admin to set up a trade channel with `/settings tradechannel`",
-                        embed=embed
+                        f"**Tip:** Ask an admin to set up a trade channel with `/settings tradechannel`",
+                        embed=trade_embed
                     )
             else:
                 await interaction.followup.send(
                     f"Trade #{trade_id} created! Share it with potential traders.",
-                    embed=embed
+                    embed=trade_embed
                 )
+    
+    def _create_enhanced_trade_embed(self, trade: dict, requester: discord.User, 
+                                      target: Optional[discord.User] = None) -> discord.Embed:
+        game = trade.get('game', 'unknown')
+        color = GAME_COLORS.get(game, 0x7289DA)
+        
+        embed = discord.Embed(
+            title=f"Trade Offer #{trade['id']}",
+            description=f"**Game:** {GAME_NAMES.get(game, game.upper())}",
+            color=color,
+            timestamp=datetime.utcnow()
+        )
+        embed.set_author(name=requester.display_name, icon_url=requester.display_avatar.url)
+        
+        offering_items = json.loads(trade.get('requester_items', '[]') or '[]')
+        offering_gems = trade.get('offering_gems', 0) or 0
+        offering_lines = []
+        total_offering = 0
+        
+        for item in offering_items:
+            emoji = RARITY_EMOJIS.get(item.get('rarity', 'Common'), '⚪')
+            value = item.get('value', 0)
+            total_offering += value
+            qty = item.get('quantity', 1)
+            line = f"{emoji} **{item['name']}**"
+            if qty > 1:
+                line += f" x{qty}"
+            if value > 0:
+                line += f" ({format_value(value)})"
+            offering_lines.append(line)
+        
+        if offering_gems > 0:
+            offering_lines.append(f"💎 **{format_value(offering_gems)} Diamonds**")
+            total_offering += offering_gems
+        
+        if offering_lines:
+            embed.add_field(
+                name=f"📦 Offering",
+                value="\n".join(offering_lines[:10]) + (f"\n+{len(offering_lines)-10} more" if len(offering_lines) > 10 else ""),
+                inline=True
+            )
+        
+        requesting_items = json.loads(trade.get('target_items', '[]') or '[]')
+        requesting_gems = trade.get('requesting_gems', 0) or 0
+        requesting_lines = []
+        total_requesting = 0
+        
+        for item in requesting_items:
+            emoji = RARITY_EMOJIS.get(item.get('rarity', 'Common'), '⚪')
+            value = item.get('value', 0)
+            total_requesting += value
+            line = f"{emoji} **{item['name']}**"
+            if value > 0:
+                line += f" ({format_value(value)})"
+            requesting_lines.append(line)
+        
+        if requesting_gems > 0:
+            requesting_lines.append(f"💎 **{format_value(requesting_gems)} Diamonds**")
+            total_requesting += requesting_gems
+        
+        if requesting_lines:
+            embed.add_field(
+                name=f"🎯 Requesting",
+                value="\n".join(requesting_lines[:10]),
+                inline=True
+            )
+        else:
+            embed.add_field(name="🎯 Requesting", value="*Open to offers*", inline=True)
+        
+        if total_offering > 0 or total_requesting > 0:
+            diff = total_offering - total_requesting
+            if diff > 0:
+                analysis = f"📈 Overpay by {format_value(abs(diff))}"
+            elif diff < 0:
+                analysis = f"📉 Underpay by {format_value(abs(diff))}"
+            else:
+                analysis = "⚖️ Fair trade"
+            embed.add_field(name="💰 Value", value=analysis, inline=True)
+        
+        notes = trade.get('notes')
+        if notes:
+            embed.add_field(name="📝 Notes", value=notes[:200], inline=False)
+        
+        if target:
+            embed.add_field(name="📮 To", value=target.mention, inline=True)
+        
+        status = trade.get('status', 'draft')
+        status_emoji = {'draft': '📝', 'pending': '⏳', 'accepted': '✅', 'completed': '🎉', 
+                       'cancelled': '❌', 'disputed': '⚠️'}.get(status, '📋')
+        embed.set_footer(text=f"{status_emoji} {status.replace('_', ' ').title()}")
+        
+        return embed
+    
+    def _create_announcement_embed(self, trade: dict, user: discord.User, 
+                                    game: str, offering_gems: int) -> discord.Embed:
+        embed = discord.Embed(
+            title="🔔 New Trade Available!",
+            color=GAME_COLORS.get(game, 0x2ECC71),
+            description=f"{user.mention} is looking to trade!"
+        )
+        embed.add_field(name="Trade ID", value=f"#{trade['id']}", inline=True)
+        embed.add_field(name="Game", value=GAME_NAMES.get(game, game), inline=True)
+        
+        items = json.loads(trade.get('requester_items', '[]') or '[]')
+        if items:
+            items_preview = []
+            for item in items[:5]:
+                emoji = RARITY_EMOJIS.get(item.get('rarity', 'Common'), '⚪')
+                items_preview.append(f"{emoji} {item['name']}")
+            if len(items) > 5:
+                items_preview.append(f"... +{len(items) - 5} more")
+            embed.add_field(name="Items Offered", value="\n".join(items_preview), inline=False)
+        
+        if offering_gems > 0:
+            embed.add_field(name="💎 Diamonds", value=format_value(offering_gems), inline=True)
+        
+        embed.set_thumbnail(url=user.display_avatar.url)
+        embed.set_footer(text="Click below to make an offer!")
+        
+        return embed
     
     async def _process_trade_acceptance(self, interaction: discord.Interaction, trade_id: int, target: discord.User):
         trade = await get_trade(trade_id)

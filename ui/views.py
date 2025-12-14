@@ -170,10 +170,202 @@ class CounterButton(Button):
             await interaction.response.send_message("Only the trade recipient can make a counter offer.", ephemeral=True)
             return
         
-        await interaction.response.send_message(
-            "To make a counter offer, use `/trade create` and select the same game. Tag the original trader as the target user.",
-            ephemeral=True
+        from utils.database import get_trade
+        
+        trade = await get_trade(self.trade_id)
+        if not trade:
+            await interaction.response.send_message("Trade not found.", ephemeral=True)
+            return
+        
+        modal = CounterOfferModal(self.trade_id, trade['game'], trade['requester_id'])
+        await interaction.response.send_modal(modal)
+
+
+class CounterOfferModal(Modal):
+    def __init__(self, trade_id: int, game: str, requester_id: int):
+        super().__init__(title="Make Counter Offer")
+        self.trade_id = trade_id
+        self.game = game
+        self.requester_id = requester_id
+        
+        self.offering_items = TextInput(
+            label="Items You'll Give",
+            placeholder="Enter items separated by commas...",
+            style=discord.TextStyle.paragraph,
+            required=True,
+            max_length=500
         )
+        self.add_item(self.offering_items)
+        
+        self.requesting_items = TextInput(
+            label="Items You Want",
+            placeholder="Enter items you want, separated by commas...",
+            style=discord.TextStyle.paragraph,
+            required=False,
+            max_length=500
+        )
+        self.add_item(self.requesting_items)
+        
+        if game == 'ps99':
+            self.gems = TextInput(
+                label="Diamonds to Add (Optional)",
+                placeholder="e.g., 500M, 1B, 2.5T",
+                style=discord.TextStyle.short,
+                required=False,
+                max_length=20
+            )
+            self.add_item(self.gems)
+        
+        self.notes = TextInput(
+            label="Notes",
+            placeholder="Any additional notes for your counter...",
+            style=discord.TextStyle.paragraph,
+            required=False,
+            max_length=200
+        )
+        self.add_item(self.notes)
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        from utils.database import get_trade, update_trade, add_trade_history
+        from ui.embeds import GAME_NAMES
+        from ui.trade_builder import parse_gem_value, format_value
+        
+        offering = [i.strip() for i in self.offering_items.value.split(',') if i.strip()]
+        requesting = [i.strip() for i in self.requesting_items.value.split(',') if i.strip()] if self.requesting_items.value else []
+        
+        gems = 0
+        if hasattr(self, 'gems') and self.gems.value:
+            gems = parse_gem_value(self.gems.value)
+        
+        counter_data = {
+            'offering': offering,
+            'requesting': requesting,
+            'gems': gems,
+            'notes': self.notes.value if self.notes.value else '',
+            'from_user': interaction.user.id
+        }
+        
+        await update_trade(self.trade_id, counter_offer_data=json.dumps(counter_data), status='counter_offered')
+        await add_trade_history(self.trade_id, 'counter_offered', interaction.user.id)
+        
+        requester = await interaction.client.fetch_user(self.requester_id)
+        
+        embed = discord.Embed(
+            title="🔄 Counter Offer Received!",
+            description=f"{interaction.user.mention} has made a counter offer for Trade #{self.trade_id}",
+            color=0x3498DB
+        )
+        embed.add_field(name="Game", value=GAME_NAMES.get(self.game, self.game), inline=True)
+        
+        if offering:
+            embed.add_field(name="📦 They Offer", value="\n".join([f"• {i}" for i in offering[:5]]), inline=True)
+        if requesting:
+            embed.add_field(name="🎯 They Want", value="\n".join([f"• {i}" for i in requesting[:5]]), inline=True)
+        if gems > 0:
+            embed.add_field(name="💎 Diamonds", value=format_value(gems), inline=True)
+        if counter_data['notes']:
+            embed.add_field(name="📝 Notes", value=counter_data['notes'][:100], inline=False)
+        
+        counter_view = CounterOfferResponseView(self.trade_id, self.requester_id, interaction.user.id)
+        
+        await interaction.response.send_message(
+            content=f"{requester.mention} - You have a counter offer!",
+            embed=embed,
+            view=counter_view
+        )
+
+
+class CounterOfferResponseView(View):
+    def __init__(self, trade_id: int, requester_id: int, target_id: int):
+        super().__init__(timeout=None)
+        self.trade_id = trade_id
+        self.requester_id = requester_id
+        self.target_id = target_id
+        
+        self.add_item(AcceptCounterButton(trade_id, requester_id, target_id))
+        self.add_item(DeclineCounterButton(trade_id, requester_id, target_id))
+        self.add_item(CounterAgainButton(trade_id, requester_id))
+
+
+class AcceptCounterButton(Button):
+    def __init__(self, trade_id: int, requester_id: int, target_id: int):
+        super().__init__(label="Accept Counter", style=discord.ButtonStyle.success, emoji="✅", custom_id=f"counter:accept:{trade_id}", row=0)
+        self.trade_id = trade_id
+        self.requester_id = requester_id
+        self.target_id = target_id
+    
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self.requester_id:
+            await interaction.response.send_message("Only the original trader can accept this counter.", ephemeral=True)
+            return
+        
+        from utils.database import update_trade, add_trade_history
+        
+        await update_trade(self.trade_id, status='accepted')
+        await add_trade_history(self.trade_id, 'counter_accepted', interaction.user.id)
+        
+        if self.view:
+            for child in self.view.children:
+                if hasattr(child, 'disabled'):
+                    child.disabled = True
+            if interaction.message:
+                await interaction.message.edit(view=self.view)
+        
+        target = await interaction.client.fetch_user(self.target_id)
+        
+        await interaction.response.send_message(
+            f"✅ Counter offer accepted! {interaction.user.mention} and {target.mention} - proceed to complete the trade in-game!",
+            view=DynamicHandoffView(self.trade_id, self.requester_id, self.target_id)
+        )
+
+
+class DeclineCounterButton(Button):
+    def __init__(self, trade_id: int, requester_id: int, target_id: int):
+        super().__init__(label="Decline", style=discord.ButtonStyle.danger, emoji="❌", custom_id=f"counter:decline:{trade_id}", row=0)
+        self.trade_id = trade_id
+        self.requester_id = requester_id
+        self.target_id = target_id
+    
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self.requester_id:
+            await interaction.response.send_message("Only the original trader can decline.", ephemeral=True)
+            return
+        
+        from utils.database import update_trade, add_trade_history
+        
+        await update_trade(self.trade_id, status='pending', counter_offer_data=None)
+        await add_trade_history(self.trade_id, 'counter_declined', interaction.user.id)
+        
+        if self.view:
+            for child in self.view.children:
+                if hasattr(child, 'disabled'):
+                    child.disabled = True
+            if interaction.message:
+                await interaction.message.edit(view=self.view)
+        
+        await interaction.response.send_message("Counter offer declined. Trade returned to pending.")
+
+
+class CounterAgainButton(Button):
+    def __init__(self, trade_id: int, requester_id: int):
+        super().__init__(label="Counter Back", style=discord.ButtonStyle.primary, emoji="🔄", custom_id=f"counter:again:{trade_id}", row=0)
+        self.trade_id = trade_id
+        self.requester_id = requester_id
+    
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self.requester_id:
+            await interaction.response.send_message("Only the original trader can counter.", ephemeral=True)
+            return
+        
+        from utils.database import get_trade
+        
+        trade = await get_trade(self.trade_id)
+        if not trade:
+            await interaction.response.send_message("Trade not found.", ephemeral=True)
+            return
+        
+        modal = CounterOfferModal(self.trade_id, trade['game'], trade['target_id'])
+        await interaction.response.send_modal(modal)
 
 
 class NegotiateButton(Button):
