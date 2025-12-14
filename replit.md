@@ -129,6 +129,12 @@ Items stored in the database have the following fields:
 - Handoff buttons: "I traded in-game", "Something went wrong", "Upload Proof"
 
 ## Recent Changes
+- **Dec 2024**: Fixed trade creation bug and improved announcements
+  - Fixed critical bug where trade creation was silently failing
+  - Trade announcements now show the item's image as thumbnail (not user avatar)
+  - Fixed type compatibility issues across the codebase
+  - All button interactions now properly typed and error-free
+
 - **Dec 2024**: Fixed /item command and improved database population
   - Database now auto-populates from fallback data on startup if empty
   - Added `/owner refresh_cache` - Fetches items from APIs and saves to database

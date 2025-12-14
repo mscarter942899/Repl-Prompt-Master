@@ -296,7 +296,16 @@ class TradingCog(commands.Cog):
         if offering_gems > 0:
             embed.add_field(name="💎 Diamonds", value=format_value(offering_gems), inline=True)
         
-        embed.set_thumbnail(url=user.display_avatar.url)
+        first_item_icon = None
+        if items:
+            for item in items:
+                if item.get('icon_url'):
+                    first_item_icon = item['icon_url']
+                    break
+        
+        if first_item_icon:
+            embed.set_thumbnail(url=first_item_icon)
+        
         embed.set_footer(text="Click below to make an offer!")
         
         return embed
