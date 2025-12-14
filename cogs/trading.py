@@ -15,7 +15,7 @@ from utils.trust_engine import trust_engine, RiskLevel
 from utils.validators import Validators
 from utils.rate_limit import rate_limiter, action_cooldown
 from ui.embeds import TradeEmbed, GAME_NAMES
-from ui.views import TradeView, HandoffView, ConfirmView, GameSelectView, PersistentTradeView, TradeAnnouncementView
+from ui.views import TradeView, HandoffView, ConfirmView, GameSelectView, DynamicTradeView, DynamicAnnouncementView
 from ui.modals import TradeModal
 
 class TradingCog(commands.Cog):
@@ -131,7 +131,7 @@ class TradingCog(commands.Cog):
         embed = TradeEmbed.create_trade_offer(trade, requester_user, target)
         
         if target:
-            view = PersistentTradeView(trade_id, interaction.user.id, target.id)
+            view = DynamicTradeView(trade_id, interaction.user.id, target.id)
             msg = await interaction.followup.send(
                 content=f"{target.mention}, you have a trade offer!",
                 embed=embed,
@@ -148,8 +148,8 @@ class TradingCog(commands.Cog):
                 trade_channel_id = await get_trade_channel(interaction.guild.id)
                 if trade_channel_id:
                     trade_channel = interaction.guild.get_channel(trade_channel_id)
-                    if trade_channel:
-                        announcement_view = TradeAnnouncementView(trade_id, interaction.user.id, game)
+                    if trade_channel and isinstance(trade_channel, discord.TextChannel):
+                        announcement_view = DynamicAnnouncementView(trade_id, interaction.user.id, game)
                         
                         announcement_embed = discord.Embed(
                             title="New Trade Available!",

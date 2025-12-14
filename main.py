@@ -8,7 +8,6 @@ from dotenv import load_dotenv
 from keep_alive import keep_alive
 from utils.database import init_database
 from api import setup_all_adapters
-from ui.views import PersistentTradeView, PersistentHandoffView, TradeAnnouncementView
 
 load_dotenv()
 
@@ -41,7 +40,6 @@ class RobloxTradingBot(commands.Bot):
             'cogs.item_manage',
             'cogs.settings'
         ]
-        self.persistent_views_added = False
     
     async def setup_hook(self):
         logger.info("Initializing database...")
@@ -49,12 +47,6 @@ class RobloxTradingBot(commands.Bot):
         
         logger.info("Setting up API adapters...")
         setup_all_adapters()
-        
-        logger.info("Registering persistent views...")
-        self.add_view(PersistentTradeView(0, 0, 0))
-        self.add_view(PersistentHandoffView(0, 0, 0))
-        self.add_view(TradeAnnouncementView(0, 0, ""))
-        self.persistent_views_added = True
         
         logger.info("Loading cogs...")
         for extension in self.initial_extensions:
