@@ -1122,6 +1122,7 @@ async def handle_persistent_interaction(bot, interaction: discord.Interaction):
         'announce:items:': handle_announce_items,
         'announce:profile:': handle_announce_profile,
         'announce:share:': handle_announce_share,
+        'announce:bookmark:': lambda i, t: i.response.send_message(f"Trade #{t} saved to bookmarks!", ephemeral=True),
         'counter:accept:': handle_counter_accept,
         'counter:decline:': handle_counter_decline,
         'counter:again:': handle_counter_again,
