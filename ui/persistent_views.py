@@ -783,40 +783,151 @@ async def handle_ticket_close(interaction: discord.Interaction, trade_id: Option
 
 
 async def handle_announce_interested(interaction: discord.Interaction, trade_id: int):
-    from utils.database import get_trade
+    from utils.database import get_trade, update_trade, add_trade_history, create_trade_ticket
+    from ui.views import TradeTicketView
     
     trade = await safe_fetch_trade(trade_id)
     if not trade:
-        embed = create_error_embed("Trade Not Found", "This trade no longer exists.")
+        embed = create_error_embed("Trade Not Found", "This trade no longer exists or has expired.")
         return await interaction.response.send_message(embed=embed, ephemeral=True)
     
     requester_id = trade['requester_id']
     if interaction.user.id == requester_id:
-        embed = create_error_embed("Oops!", "You can't express interest in your own trade!")
+        embed = create_error_embed("That's Your Trade!", "You can't express interest in your own trade offer.")
+        return await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    if trade['target_id'] and trade['target_id'] != interaction.user.id:
+        embed = create_error_embed("Trade Already Claimed", "Someone else is already trading for this offer. Check back later!")
+        return await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    if trade['status'] not in ('draft', 'pending', 'open'):
+        embed = create_error_embed("Trade Unavailable", f"This trade is already {trade['status']}.")
         return await interaction.response.send_message(embed=embed, ephemeral=True)
     
     requester = await safe_fetch_user(interaction.client, requester_id)
-    
     game = trade['game']
+    game_name = GAME_NAMES.get(game, game)
     game_emoji = GAME_EMOJIS.get(game, '🎮')
     game_color = GAME_COLORS.get(game, 0x2ECC71)
     
-    embed = discord.Embed(
-        title=f"{game_emoji} Someone is Interested!",
-        description=f"{interaction.user.mention} is interested in Trade #{trade_id}!",
-        color=game_color
-    )
-    embed.set_thumbnail(url=interaction.user.display_avatar.url)
-    embed.add_field(name="Next Step", value="DM them to discuss the trade!", inline=False)
-    
-    try:
+    if interaction.guild and interaction.channel and isinstance(interaction.channel, discord.TextChannel):
+        try:
+            thread = await interaction.channel.create_thread(
+                name=f"🎫 Trade #{trade_id} - {requester.display_name if requester else 'Trader'} & {interaction.user.display_name}",
+                type=discord.ChannelType.private_thread,
+                auto_archive_duration=1440
+            )
+            
+            try:
+                if requester:
+                    await thread.add_user(requester)
+                await thread.add_user(interaction.user)
+            except (discord.Forbidden, discord.HTTPException):
+                pass
+            
+            try:
+                await update_trade(trade_id, target_id=interaction.user.id, status='pending')
+                await add_trade_history(trade_id, 'interest_expressed', interaction.user.id)
+            except Exception as e:
+                logger.error(f"Error updating trade after ticket creation: {e}")
+                try:
+                    await thread.delete()
+                except:
+                    pass
+                embed = create_error_embed("Error", "Failed to set up trade. Please try again.")
+                return await interaction.response.send_message(embed=embed, ephemeral=True)
+            
+            await create_trade_ticket(
+                trade_id=trade_id,
+                thread_id=thread.id,
+                channel_id=interaction.channel.id,
+                guild_id=interaction.guild.id,
+                requester_id=requester_id,
+                target_id=interaction.user.id
+            )
+            
+            welcome_embed = discord.Embed(
+                title=f"🎫 Trade Ticket #{trade_id}",
+                description=f"{game_emoji} **{game_name}** trade between {requester.mention if requester else f'<@{requester_id}>'} and {interaction.user.mention}",
+                color=game_color
+            )
+            welcome_embed.add_field(
+                name="📋 How to Complete Your Trade",
+                value="1️⃣ Share your Roblox usernames using the button below\n"
+                      "2️⃣ Add each other as friends in Roblox\n"
+                      "3️⃣ Meet up and complete the trade in-game\n"
+                      "4️⃣ Both confirm using the green button when done",
+                inline=False
+            )
+            welcome_embed.add_field(
+                name="⚠️ Stay Safe",
+                value="• Verify items before accepting in-game\n"
+                      "• Take screenshots as proof\n"
+                      "• Report any issues immediately",
+                inline=False
+            )
+            welcome_embed.set_footer(text="This ticket auto-archives after 24 hours of inactivity")
+            
+            ticket_view = TradeTicketView(trade_id, requester_id, interaction.user.id, game)
+            
+            await thread.send(
+                f"🔔 {requester.mention if requester else f'<@{requester_id}>'} {interaction.user.mention} - Your private trade room is ready!",
+                embed=welcome_embed,
+                view=ticket_view
+            )
+            
+            success_embed = discord.Embed(
+                title="✅ Trade Ticket Created!",
+                description=f"A private trade room has been created for Trade #{trade_id}.",
+                color=game_color
+            )
+            success_embed.add_field(name="🎫 Trade Room", value=thread.mention, inline=True)
+            success_embed.add_field(name=f"{game_emoji} Game", value=game_name, inline=True)
+            success_embed.set_footer(text="Head to the trade room to complete your trade!")
+            
+            await interaction.response.send_message(embed=success_embed)
+            
+        except discord.Forbidden:
+            embed = discord.Embed(
+                title="⚠️ Couldn't Create Thread",
+                description="I don't have permission to create private threads here.\nPlease DM the trader directly to coordinate.",
+                color=0xF1C40F
+            )
+            embed.add_field(name="Trader", value=requester.mention if requester else f"<@{requester_id}>", inline=True)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            
+            if requester:
+                try:
+                    notify_embed = discord.Embed(
+                        title=f"{game_emoji} Someone is Interested in Your Trade!",
+                        description=f"**{interaction.user.display_name}** wants to trade with you!",
+                        color=game_color
+                    )
+                    notify_embed.add_field(name="Trade ID", value=f"#{trade_id}", inline=True)
+                    notify_embed.add_field(name="Game", value=game_name, inline=True)
+                    notify_embed.set_thumbnail(url=interaction.user.display_avatar.url)
+                    notify_embed.set_footer(text="DM them to coordinate the trade!")
+                    await requester.send(embed=notify_embed)
+                except:
+                    pass
+    else:
+        embed = create_info_embed("Trade Interest Sent!", f"Your interest has been sent to {requester.display_name if requester else 'the trader'}. They will DM you to coordinate.", game)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        
         if requester:
-            await requester.send(embed=embed)
-        embed = create_success_embed("Interest Sent!", f"Your interest has been sent to {requester.display_name if requester else 'the trader'}!", game)
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-    except:
-        embed = create_info_embed("DMs Disabled", f"Couldn't DM the trader. Tag them directly: {requester.mention if requester else ''}")
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+            try:
+                notify_embed = discord.Embed(
+                    title=f"{game_emoji} Someone is Interested in Your Trade!",
+                    description=f"**{interaction.user.display_name}** wants to trade with you!",
+                    color=game_color
+                )
+                notify_embed.add_field(name="Trade ID", value=f"#{trade_id}", inline=True)
+                notify_embed.add_field(name="Game", value=game_name, inline=True)
+                notify_embed.set_thumbnail(url=interaction.user.display_avatar.url)
+                notify_embed.set_footer(text="DM them to coordinate the trade!")
+                await requester.send(embed=notify_embed)
+            except:
+                pass
 
 
 async def handle_announce_items(interaction: discord.Interaction, trade_id: int):

@@ -6,11 +6,25 @@ from typing import Optional
 from utils.database import get_guild_settings, set_guild_settings, set_trade_channel, set_game_trade_channel, get_all_game_trade_channels
 
 
+def is_admin():
+    """Check if user has administrator or manage_guild permissions."""
+    async def predicate(interaction: discord.Interaction) -> bool:
+        if not interaction.guild:
+            return False
+        member = interaction.guild.get_member(interaction.user.id)
+        if member:
+            return member.guild_permissions.administrator or member.guild_permissions.manage_guild
+        if hasattr(interaction.user, 'guild_permissions'):
+            return interaction.user.guild_permissions.administrator or interaction.user.guild_permissions.manage_guild
+        return False
+    return app_commands.check(predicate)
+
+
 class SettingsCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
     
-    settings_group = app_commands.Group(name="settings", description="Server settings commands")
+    settings_group = app_commands.Group(name="settings", description="Server settings commands (Admin Only)")
     
     GAME_NAMES = {
         "ps99": "Pet Simulator 99",
@@ -33,6 +47,7 @@ class SettingsCog(commands.Cog):
         app_commands.Choice(name="Steal a Brainrot", value="sab")
     ])
     @app_commands.default_permissions(manage_guild=True)
+    @is_admin()
     async def set_trade_channel_cmd(self, interaction: discord.Interaction, channel: Optional[discord.TextChannel] = None, game: Optional[str] = None):
         if not interaction.guild:
             await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
@@ -97,6 +112,7 @@ class SettingsCog(commands.Cog):
     
     @settings_group.command(name="view", description="View current server settings")
     @app_commands.default_permissions(manage_guild=True)
+    @is_admin()
     async def view_settings(self, interaction: discord.Interaction):
         if not interaction.guild:
             await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
@@ -169,6 +185,7 @@ class SettingsCog(commands.Cog):
     @settings_group.command(name="logchannel", description="Set the channel for moderation logs")
     @app_commands.describe(channel="The channel for logs (leave empty to disable)")
     @app_commands.default_permissions(manage_guild=True)
+    @is_admin()
     async def set_log_channel(self, interaction: discord.Interaction, channel: Optional[discord.TextChannel] = None):
         if not interaction.guild:
             await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
@@ -187,6 +204,7 @@ class SettingsCog(commands.Cog):
     @settings_group.command(name="modrole", description="Set the moderator role for trade disputes")
     @app_commands.describe(role="The moderator role (leave empty to disable)")
     @app_commands.default_permissions(manage_guild=True)
+    @is_admin()
     async def set_mod_role(self, interaction: discord.Interaction, role: Optional[discord.Role] = None):
         if not interaction.guild:
             await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
@@ -210,6 +228,7 @@ class SettingsCog(commands.Cog):
         app_commands.Choice(name="Require Verification", value="require_verification")
     ])
     @app_commands.default_permissions(manage_guild=True)
+    @is_admin()
     async def toggle_feature(self, interaction: discord.Interaction, feature: str):
         if not interaction.guild:
             await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
@@ -236,6 +255,7 @@ class SettingsCog(commands.Cog):
     @settings_group.command(name="tradefeed", description="Set channel for completed trade announcements")
     @app_commands.describe(channel="The channel for trade feed (leave empty to disable)")
     @app_commands.default_permissions(manage_guild=True)
+    @is_admin()
     async def set_trade_feed(self, interaction: discord.Interaction, channel: Optional[discord.TextChannel] = None):
         if not interaction.guild:
             await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
@@ -273,6 +293,7 @@ class SettingsCog(commands.Cog):
     @settings_group.command(name="mintrust", description="Set minimum trust score to create trades")
     @app_commands.describe(score="Minimum trust score (0-100, 0 to disable)")
     @app_commands.default_permissions(manage_guild=True)
+    @is_admin()
     async def set_min_trust(self, interaction: discord.Interaction, score: int):
         if not interaction.guild:
             await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
