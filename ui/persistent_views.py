@@ -1155,6 +1155,36 @@ async def handle_persistent_interaction(bot, interaction: discord.Interaction):
         await handle_handoff_tips(interaction)
         return True
     
+    if custom_id.startswith('closeconfirm:'):
+        parts = custom_id.split(':')
+        if len(parts) >= 4:
+            action = parts[1]
+            trade_id = int(parts[2])
+            user_id = int(parts[3])
+            
+            if interaction.user.id != user_id:
+                await interaction.response.send_message("You cannot use this button.", ephemeral=True)
+                return True
+            
+            if action == 'yes':
+                from utils.database import update_trade, close_trade_ticket
+                await update_trade(trade_id, status='cancelled')
+                await close_trade_ticket(trade_id)
+                await disable_message_buttons(interaction)
+                await interaction.response.send_message("🔒 Ticket closed and trade cancelled.")
+                
+                if isinstance(interaction.channel, discord.Thread):
+                    import asyncio
+                    await asyncio.sleep(5)
+                    try:
+                        await interaction.channel.edit(archived=True)
+                    except:
+                        pass
+            else:
+                await disable_message_buttons(interaction)
+                await interaction.response.send_message("Ticket will remain open.", ephemeral=True)
+            return True
+    
     return False
 
 

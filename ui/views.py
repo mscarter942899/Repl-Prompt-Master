@@ -1526,38 +1526,22 @@ class CloseTicketButton(Button):
 
 class ConfirmCloseView(View):
     def __init__(self, trade_id: int, user_id: int):
-        super().__init__(timeout=60)
+        super().__init__(timeout=None)
         self.trade_id = trade_id
         self.user_id = user_id
-    
-    @discord.ui.button(label="Yes, Close", style=discord.ButtonStyle.danger)
-    async def confirm(self, interaction: discord.Interaction, button: Button):
-        if interaction.user.id != self.user_id:
-            return
         
-        from utils.database import update_trade, close_trade_ticket
-        
-        await update_trade(self.trade_id, status='cancelled')
-        await close_trade_ticket(self.trade_id)
-        
-        await interaction.response.send_message("🔒 Ticket closed and trade cancelled.")
-        
-        if isinstance(interaction.channel, discord.Thread):
-            import asyncio
-            await asyncio.sleep(5)
-            try:
-                await interaction.channel.edit(archived=True)
-            except:
-                pass
-        
-        self.stop()
-    
-    @discord.ui.button(label="No, Keep Open", style=discord.ButtonStyle.secondary)
-    async def cancel(self, interaction: discord.Interaction, button: Button):
-        if interaction.user.id != self.user_id:
-            return
-        await interaction.response.send_message("Ticket will remain open.", ephemeral=True)
-        self.stop()
+        yes_btn = Button(
+            label="Yes, Close",
+            style=discord.ButtonStyle.danger,
+            custom_id=f"closeconfirm:yes:{trade_id}:{user_id}"
+        )
+        no_btn = Button(
+            label="No, Keep Open",
+            style=discord.ButtonStyle.secondary,
+            custom_id=f"closeconfirm:no:{trade_id}:{user_id}"
+        )
+        self.add_item(yes_btn)
+        self.add_item(no_btn)
 
 
 class PaginatorView(View):
