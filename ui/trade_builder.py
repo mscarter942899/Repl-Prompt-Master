@@ -88,6 +88,7 @@ class TradeBuilderView(View):
         self.completed = False
         self.cancelled = False
         self.current_mode = "main"
+        self.message: Optional[discord.Message] = None
         
         self._build_main_view()
     
@@ -267,7 +268,8 @@ class BrowseItemsButton(Button):
             game=self.view.game,
             items=items,
             side=self.side,
-            parent_view=self.view
+            parent_view=self.view,
+            parent_interaction=interaction
         )
         
         embed = selector_view.get_embed()
@@ -351,7 +353,8 @@ class ManageItemsButton(Button):
             user_id=self.view.user_id,
             items=items,
             side=self.side,
-            parent_view=self.view
+            parent_view=self.view,
+            parent_interaction=interaction
         )
         
         embed = manage_view.get_embed()
@@ -431,13 +434,14 @@ class CancelButton(Button):
 
 
 class ItemBrowserView(View):
-    def __init__(self, user_id: int, game: str, items: List[Dict], side: str, parent_view: TradeBuilderView):
+    def __init__(self, user_id: int, game: str, items: List[Dict], side: str, parent_view: TradeBuilderView, parent_interaction: Optional[discord.Interaction] = None):
         super().__init__(timeout=300)
         self.user_id = user_id
         self.game = game
         self.items = items
         self.side = side
         self.parent_view = parent_view
+        self._parent_interaction = parent_interaction
         self.current_page = 0
         self.items_per_page = 25
         self.selected_items: List[Dict] = []
@@ -473,9 +477,10 @@ class ItemBrowserView(View):
                 value = item.get('value', 0)
                 desc = f"{item.get('rarity', 'Unknown')} • {format_value(value)}" if value > 0 else item.get('rarity', 'Unknown')
                 
+                item_id = str(item.get('item_id', item.get('id', item['name'])))[:100]
                 options.append(discord.SelectOption(
                     label=item['name'][:100],
-                    value=str(item.get('id', item['name']))[:100],
+                    value=item_id,
                     description=desc[:100],
                     emoji=emoji
                 ))
@@ -578,12 +583,12 @@ class ItemBrowserView(View):
         if interaction.user.id != self.user_id:
             return await interaction.response.defer()
         
-        selected_ids = interaction.data.get('values', [])
+        selected_ids = interaction.data.get('values', []) if interaction.data else []
         filtered = self._get_filtered_items()
         
         self.selected_items = [
             item for item in filtered
-            if str(item.get('id', item['name'])) in selected_ids
+            if str(item.get('item_id', item.get('id', item['name']))) in selected_ids
         ]
         
         self._build_view()
@@ -593,7 +598,8 @@ class ItemBrowserView(View):
         if interaction.user.id != self.user_id:
             return await interaction.response.defer()
         
-        self.filter_rarity = interaction.data.get('values', ['all'])[0]
+        values = interaction.data.get('values', ['all']) if interaction.data else ['all']
+        self.filter_rarity = values[0] if values else 'all'
         self.current_page = 0
         self.selected_items = []
         self._build_view()
@@ -640,9 +646,10 @@ class ItemBrowserView(View):
             await interaction.response.send_message("No items selected!", ephemeral=True)
             return
         
+        added_count = len(self.selected_items)
         for item in self.selected_items:
             item_data = {
-                'id': item.get('item_id', item.get('id', item['name'])),
+                'id': str(item.get('item_id', item.get('id', item['name']))),
                 'name': item['name'],
                 'rarity': item.get('rarity', 'Common'),
                 'value': item.get('value', 0),
@@ -658,9 +665,19 @@ class ItemBrowserView(View):
         self.parent_view._build_main_view()
         
         await interaction.response.send_message(
-            f"✅ Added {len(self.selected_items)} item(s) to your {self.side}!",
+            f"✅ Added {added_count} item(s) to your {self.side}!",
             ephemeral=True
         )
+        
+        try:
+            if self.parent_view.message:
+                await self.parent_view.message.edit(embed=self.parent_view.get_summary_embed(), view=self.parent_view)
+            else:
+                if hasattr(self, '_parent_interaction') and self._parent_interaction:
+                    await self._parent_interaction.edit_original_response(embed=self.parent_view.get_summary_embed(), view=self.parent_view)
+        except Exception:
+            pass
+        
         self.stop()
     
     async def _close(self, interaction: discord.Interaction):
@@ -672,12 +689,13 @@ class ItemBrowserView(View):
 
 
 class ManageItemsView(View):
-    def __init__(self, user_id: int, items: List[Dict], side: str, parent_view: TradeBuilderView):
+    def __init__(self, user_id: int, items: List[Dict], side: str, parent_view: TradeBuilderView, parent_interaction: Optional[discord.Interaction] = None):
         super().__init__(timeout=180)
         self.user_id = user_id
         self.items = items
         self.side = side
         self.parent_view = parent_view
+        self._parent_interaction = parent_interaction
         
         self._build_view()
     
@@ -757,7 +775,8 @@ class ManageItemsView(View):
         if interaction.user.id != self.user_id:
             return await interaction.response.defer()
         
-        indices = [int(v) for v in interaction.data.get('values', [])]
+        values = interaction.data.get('values', []) if interaction.data else []
+        indices = [int(v) for v in values]
         indices.sort(reverse=True)
         
         removed_names = []
@@ -781,6 +800,14 @@ class ManageItemsView(View):
         else:
             await interaction.response.defer()
         
+        try:
+            if self.parent_view.message:
+                await self.parent_view.message.edit(embed=self.parent_view.get_summary_embed(), view=self.parent_view)
+            elif self._parent_interaction:
+                await self._parent_interaction.edit_original_response(embed=self.parent_view.get_summary_embed(), view=self.parent_view)
+        except Exception:
+            pass
+        
         if self.items:
             self._build_view()
         else:
@@ -801,6 +828,15 @@ class ManageItemsView(View):
         self.parent_view._build_main_view()
         
         await interaction.response.send_message(f"🗑️ Cleared {count} items!", ephemeral=True)
+        
+        try:
+            if self.parent_view.message:
+                await self.parent_view.message.edit(embed=self.parent_view.get_summary_embed(), view=self.parent_view)
+            elif self._parent_interaction:
+                await self._parent_interaction.edit_original_response(embed=self.parent_view.get_summary_embed(), view=self.parent_view)
+        except Exception:
+            pass
+        
         self.stop()
     
     async def _close(self, interaction: discord.Interaction):
@@ -1099,9 +1135,10 @@ class ItemSelectorView(View):
                 value = item.get('value', 0)
                 description = f"{item.get('rarity', 'Common')} - {format_value(value)}" if value > 0 else item.get('rarity', 'Common')
                 
+                item_id = str(item.get('item_id', item.get('id', item['name'])))[:100]
                 options.append(discord.SelectOption(
                     label=item['name'][:100],
-                    value=item.get('id', item['name'])[:100],
+                    value=item_id,
                     description=description[:100],
                     emoji=emoji
                 ))
@@ -1134,8 +1171,11 @@ class ItemSelectorView(View):
         if interaction.user.id != self.user_id:
             return
         
-        select = interaction.data.get('values', [])
-        self.selected_items = [item for item in self.items if item.get('id', item['name']) in select]
+        selected_ids = interaction.data.get('values', []) if interaction.data else []
+        self.selected_items = [
+            item for item in self.items 
+            if str(item.get('item_id', item.get('id', item['name']))) in selected_ids
+        ]
         await interaction.response.defer()
     
     async def _prev_page(self, interaction: discord.Interaction):

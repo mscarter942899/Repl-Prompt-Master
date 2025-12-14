@@ -80,6 +80,11 @@ class TradingCog(commands.Cog):
             ephemeral=True
         )
         
+        try:
+            builder_view.message = await interaction.original_response()
+        except Exception:
+            pass
+        
         await builder_view.wait()
         
         if builder_view.cancelled or not builder_view.completed:
